@@ -1,0 +1,41 @@
+# Environments
+.env
+
+# Secrets
+credentials.json
+token.json
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+dist/
+build/
+*.spec
+*.log
+
+# Exceptions for git (if you need specific builds pushed, but usually better in releases)
+!electron_dashboard/dist/casper.zip
+!electron_dashboard/dist/*.exe
+
+# App specific caches and data
+.cache/
+.claude/
+chrome_profile/
+local_qdrant_db/
+local_qdrant_db_test/
+local_qdrant_db_test_key/

@@ -1,0 +1,36 @@
+{
+  "name": "casper-installer",
+  "version": "1.0.2",
+  "description": "Custom Installer for Casper",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.casper.installer",
+    "productName": "Casper Installer",
+    "artifactName": "Casper-Windows-Installer.exe",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "portable": {
+      "splashImage": null,
+      "requestExecutionLevel": "admin"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "extract-zip": "^2.0.1",
+    "fs-extra": "^11.2.0"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "name": "electron_dashboard",
+  "version": "1.0.2",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.casper.dashboard",
+    "productName": "Casper",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Rishabkr0",
+      "repo": "Casper"
+    },
+    "extraResources": [
+      {
+        "from": "../dist/casper_backend",
+        "to": "casper_backend"
+      },
+      {
+        "from": "..",
+        "to": ".",
+        "filter": [
+          "agent_tools/**/*",
+          "mcp_client/**/*",
+          "templates/**/*",
+          "agent.py",
+          ".env.example",
+          "generate_token.py",
+          "prompts.py",
+          "jarvis_overlay.py",
+          "jarvis_ui.html",
+          "computer_use.py",
+          "uia_control.py",
+          "ui_state.py",
+          "requirements.txt"
+        ]
+      }
+    ]
+  },
+  "keywords": [],
+  "author": "Rishab",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

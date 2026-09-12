@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>casper Studio // Editorial</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                    },
+                    colors: {
+                        base: '#1a1a18',
+                        surface: '#242422',
+                        surfaceHover: '#2a2a28',
+                        border: '#3f3f3c',
+                        textPrimary: '#e4e4e1',
+                        textSecondary: '#a1a19a',
+                        accent: '#d4d4d0',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #1a1a18;
+            color: #e4e4e1;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f3c; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52524f; }
+
+        /* Pages */
+        .page { display: none; opacity: 0; }
+        .page.active { display: block; opacity: 1; animation: fadeIn 0.3s ease forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Matte Card */
+        .matte-card {
+            background: #242422;
+            border: 1px solid #3f3f3c;
+            border-radius: 12px;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .matte-card:hover {
+            background: #2a2a28;
+            border-color: #52524f;
+        }
+
+        /* Inputs */
+        .flat-input {
+            background: #1a1a18;
+            border: 1px solid #3f3f3c;
+            color: #e4e4e1;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.95rem;
+            transition: border-color 0.2s ease;
+            width: 100%;
+        }
+        .flat-input:focus {
+            outline: none;
+            border-color: #a1a19a;
+        }
+        
+        select.flat-input {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a19a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+        }
+        select.flat-input option { background: #242422; }
+
+        /* Primary Button */
+        .btn-primary {
+            background: #e4e4e1;
+            color: #1a1a18;
+            border: 1px solid transparent;
+            padding: 0.6rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary:hover {
+            background: #ffffff;
+        }
+        .btn-primary:active { transform: scale(0.98); }
+
+        /* Sidebar Item */
+        .nav-item {
+            color: #a1a19a;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+        .nav-item:hover {
+            background: #2a2a28;
+            color: #e4e4e1;
+        }
+        .nav-item.active {
+            background: #242422;
+            color: #e4e4e1;
+            border: 1px solid #3f3f3c;
+        }
+
+        /* Status Dot */
+        .status-dot {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(100px);
+            background: #e4e4e1; color: #1a1a18;
+            padding: 1rem 1.5rem; border-radius: 8px; font-weight: 500;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); opacity: 0;
+            transition: all 0.3s ease; z-index: 1000;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    </style>
+</head>
+<body class="flex h-screen w-full antialiased selection:bg-[#3f3f3c] selection:text-white">
+
+    <!-- SIDEBAR -->
+    <nav class="w-[260px] h-full flex flex-col bg-[#1a1a18] border-r border-[#3f3f3c] shrink-0 py-8 px-4 z-10 relative">
+        <div class="flex items-center gap-3 px-3 mb-10">
+            <div class="w-10 h-10 bg-[#e4e4e1] text-[#1a1a18] rounded-md flex items-center justify-center font-sans font-bold text-xl">C</div>
+            <h1 class="text-2xl font-bold tracking-tight text-[#e4e4e1]">casper</h1>
+        </div>
+
+        <div class="flex flex-col gap-1">
+            <button onclick="switchTab('dashboard', this)" class="nav-item active flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
+                Dashboard
+            </button>
+            <button onclick="switchTab('settings', this)" class="nav-item flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                Configurations
+            </button>
+            <button onclick="switchTab('guide', this)" class="nav-item flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                Setup Guide
+            </button>
+            <button onclick="switchTab('about', this)" class="nav-item flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                About
+            </button>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 relative overflow-y-auto z-10 px-16 py-12">
+        
+        <!-- DASHBOARD -->
+        <div id="dashboard" class="page active max-w-5xl mx-auto">
+            <div class="mb-14">
+                <h2 id="greetingText" class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">Welcome back.</h2>
+                <p class="text-[#a1a19a] text-[1.05rem]">System is online and secure. Awaiting commands.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <!-- Status -->
+                <div class="matte-card p-6">
+                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Core Engine</h3>
+                    <div class="text-xl font-mono font-medium text-[#e4e4e1] flex items-center" id="engineStatusText">
+                        <span class="status-dot bg-[#e87c7c]"></span> Offline
+                    </div>
+                </div>
+                
+                <!-- Model -->
+                <div class="matte-card p-6">
+                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Neural Model</h3>
+                    <div class="text-xl font-mono font-medium text-[#e4e4e1]">Gemini 3.1 Flash</div>
+                </div>
+
+                <!-- Memory -->
+                <div class="matte-card p-6">
+                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Memory Context</h3>
+                    <div class="text-xl font-mono font-medium text-[#e4e4e1]">Mem0 Isolated</div>
+                </div>
+
+                <!-- Launch Button Card -->
+                <div class="matte-card p-6 col-span-1 md:col-span-2 flex flex-col justify-center items-center text-center cursor-pointer group" id="launchCard" style="border-color: #3f3f3c; background: #242422; transition: all 0.2s;" onclick="validateAndLaunchCasper()">
+                    <!-- We use CSS class overrides. Adding group-hover on the parent to target the text. -->
+                    <style>
+                        #launchCard:hover { background: #e4e4e1 !important; border-color: #e4e4e1 !important; }
+                        #launchCard:hover #launchText { color: #1a1a18 !important; }
+                    </style>
+                    <div class="text-[1.7rem] font-bold tracking-tight flex items-center gap-3 transition-colors duration-200" id="launchText" style="color: #e4e4e1;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        Launch casper
+                    </div>
+                </div>
+
+                <!-- Updates -->
+                <div class="matte-card p-6">
+                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Updates</h3>
+                    <div class="text-[0.95rem] text-[#e4e4e1]" id="updateStatusText">Checking for updates...</div>
+                    <div id="updateProgressContainer" class="w-full h-1 bg-[#3f3f3c] rounded-full mt-3 overflow-hidden hidden">
+                        <div id="updateProgressBar" class="h-full bg-[#e4e4e1] transition-all duration-300" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONFIGURATIONS -->
+        <div id="settings" class="page max-w-3xl mx-auto">
+            <div class="mb-14">
+                <h2 class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">Configurations</h2>
+                <p class="text-[#a1a19a] text-[1.05rem]">Manage system identity, API keys, and connection protocols.</p>
+            </div>
+
+            <form id="configForm" class="space-y-10 pb-20">
+                
+                <!-- Group 1 -->
+                <div>
+                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c]">User Identity</h3>
+                    
+                    <div class="space-y-5">
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Alias / Name</label>
+                            <input type="text" id="Casper_USER_ID" name="Casper_USER_ID" class="flat-input" placeholder="e.g. Tony Stark">
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Personal Background & Context</label>
+                            <textarea id="USER_PERSONAL_INFO" name="USER_PERSONAL_INFO" class="flat-input h-24" placeholder="I am a software engineer building AI..."></textarea>
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Voice Persona</label>
+                            <select id="CASPER_VOICE" name="CASPER_VOICE" class="flat-input" onchange="updateVoiceTag(this)">
+                                <option value="Charon">Charon — Calm & Professional Male</option>
+                                <option value="Fenrir">Fenrir — Energetic & Dynamic Male</option>
+                                <option value="Puck">Puck — Upbeat & Playful Male</option>
+                                <option value="Orbit">Orbit — Relaxed & Smooth Male</option>
+                                <option value="Orus">Orus — Deep & Authoritative Male</option>
+                                <option value="Kore">Kore — Firm & Confident Female</option>
+                                <option value="Aoede">Aoede — Breezy & Conversational Female</option>
+                                <option value="Zephyr">Zephyr — Bright & Clear Female</option>
+                                <option value="Leda">Leda — Warm & Youthful Female</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 2 -->
+                <div>
+                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c]">Authentication Keys</h3>
+                    
+                    <div class="space-y-5">
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Google Gemini API Key</label>
+                            <input type="password" id="GEMINI_API_KEY" name="GEMINI_API_KEY" class="flat-input font-mono">
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Mem0 API Key</label>
+                            <input type="password" id="MEM0_API_KEY" name="MEM0_API_KEY" class="flat-input font-mono">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 3 -->
+                <div>
+                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c] flex justify-between">
+                        <span>LiveKit Telemetry</span>
+                        <a href="https://cloud.livekit.io/" target="_blank" class="text-[#e4e4e1] hover:underline">Get Keys</a>
+                    </h3>
+                    
+                    <div class="space-y-5">
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Server WSS URL</label>
+                            <input type="text" id="LIVEKIT_URL" name="LIVEKIT_URL" class="flat-input font-mono" placeholder="wss://your-project.livekit.cloud">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">API Key</label>
+                            <input type="password" id="LIVEKIT_API_KEY" name="LIVEKIT_API_KEY" class="flat-input font-mono">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">API Secret</label>
+                            <input type="password" id="LIVEKIT_API_SECRET" name="LIVEKIT_API_SECRET" class="flat-input font-mono">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 4 -->
+                <div>
+                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c]">Communications Protocol</h3>
+                    
+                    <div class="space-y-5">
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">SMTP Gmail Address</label>
+                            <input type="text" id="GMAIL_USER" name="GMAIL_USER" class="flat-input" placeholder="user@gmail.com">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Google App Password</label>
+                            <input type="password" id="GMAIL_APP_PASSWORD" name="GMAIL_APP_PASSWORD" class="flat-input font-mono">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-6">
+                    <button type="submit" class="btn-primary" id="saveBtn">
+                        Save Configuration
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- SETUP GUIDE -->
+        <div id="guide" class="page max-w-3xl mx-auto">
+            <div class="mb-14">
+                <h2 class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">Setup Guide</h2>
+                <p class="text-[#a1a19a] text-[1.05rem]">Documentation for acquiring necessary credentials.</p>
+            </div>
+            
+            <div class="space-y-8 text-[0.95rem] text-[#e4e4e1] leading-relaxed">
+                <div>
+                    <h3 class="font-semibold mb-2">1. Google Gemini API</h3>
+                    <p class="mb-2 text-[#a1a19a]">The core neural engine driving casper's reasoning.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Visit <a href="https://aistudio.google.com/app/apikey" target="_blank" class="underline">Google AI Studio</a>.</li>
+                        <li>Click <strong>Create API key</strong> and paste it into the Configurations tab.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="font-semibold mb-2">2. LiveKit Cloud</h3>
+                    <p class="mb-2 text-[#a1a19a]">Powers the low-latency voice architecture.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Sign up at <a href="https://cloud.livekit.io/" target="_blank" class="underline">LiveKit Cloud</a>.</li>
+                        <li>Create a project and navigate to <strong>Settings > Keys</strong>.</li>
+                        <li>Add a new key and copy the URL, API Key, and API Secret.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="font-semibold mb-2">3. Mem0 Platform</h3>
+                    <p class="mb-2 text-[#a1a19a]">Provides persistent long-term memory across sessions.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Sign in to the <a href="https://app.mem0.ai/" target="_blank" class="underline">Mem0 Platform</a>.</li>
+                        <li>Generate a new API key from your dashboard.</li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-2">4. Gmail App Passwords</h3>
+                    <p class="mb-2 text-[#a1a19a]">Allows casper to send and receive emails on your behalf.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Go to your Google Account Security settings.</li>
+                        <li>Ensure 2-Step Verification is on, then create an <strong>App Password</strong>.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABOUT PAGE -->
+        <div id="about" class="page max-w-3xl mx-auto">
+            <div class="mb-14">
+                <h2 class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">About casper</h2>
+                <p class="text-[#a1a19a] text-[1.05rem]">System information and updates.</p>
+            </div>
+            
+            <div class="mb-10 p-8 border border-[#3f3f3c] rounded-xl bg-[#242422]">
+                <div class="flex items-center gap-6">
+                    <div class="w-20 h-20 bg-[#1a1a18] rounded-full border border-[#3f3f3c] flex items-center justify-center text-3xl font-bold text-[#e4e4e1]">R</div>
+                    <div>
+                        <h3 class="text-3xl font-bold tracking-tight text-[#e4e4e1] mb-1">casper</h3>
+                        <p class="text-[#a1a19a] mb-3">Built by <strong>Rishabkr0</strong></p>
+                        <div class="flex gap-4">
+                            <a href="https://github.com/Rishabkr0" target="_blank" class="text-[0.9rem] hover:underline">GitHub</a>
+                            <a href="https://www.instagram.com/rishabk.r/" target="_blank" class="text-[0.9rem] hover:underline">Instagram</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <button class="btn-primary" onclick="manualCheckForUpdates()" id="manualUpdateBtn">
+                    Check for Updates
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast" style="display: flex; align-items: center; gap: 8px;">
+        <svg id="toastIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+        <span id="toastMsg">Settings Saved Successfully</span>
+    </div>
+
+    <!-- ERROR MODAL -->
+    <div id="errorModal" class="fixed inset-0 bg-[#1a1a18]/90 z-[2000] hidden items-center justify-center p-4">
+        <div class="matte-card max-w-sm w-full p-8 text-center">
+            <h3 class="text-xl font-bold tracking-tight text-[#e4e4e1] mb-3">Incomplete Configuration</h3>
+            <p class="text-[#a1a19a] mb-6 text-[0.95rem]">casper requires active Neural Engine and Telemetry API keys to boot. Please fill out the core settings.</p>
+            <button class="w-full py-2 bg-[#e4e4e1] text-[#1a1a18] font-medium rounded-md" onclick="closeErrorModal()">Fix Configurations</button>
+        </div>
+    </div>
+
+    <script>let isBooting = false;
+
+        function closeErrorModal() {
+            document.getElementById('errorModal').style.display = 'none';
+            switchTab('settings', document.querySelectorAll('.nav-item')[1]);
+        }
+
+        async function manualCheckForUpdates() {
+            if (window.api && window.api.checkForUpdates) {
+                const btn = document.getElementById('manualUpdateBtn');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = 'Checking...';
+                await window.api.checkForUpdates();
+                setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+            }
+        }
+        
+        // Update handling
+        if (window.api && window.api.onUpdateMessage) {
+            window.api.onUpdateMessage((message) => {
+                const textEl = document.getElementById('updateStatusText');
+                textEl.innerText = message;
+                textEl.style.color = 'var(--text-primary)';
+                
+                let type = 'success';
+                if (message.includes('update available')) {
+                    textEl.style.color = '#ff9500';
+                }
+                if (message.includes('Up to date')) {
+                    textEl.style.color = '#34c759';
+                }
+                if (message.toLowerCase().includes('error')) {
+                    textEl.style.color = '#ff3b30';
+                    type = 'error';
+                }
+                showToast(message, type);
+            });
+
+            window.api.onUpdateProgress((percent) => {
+                document.getElementById('updateProgressContainer').style.display = 'block';
+                document.getElementById('updateProgressBar').style.width = percent + '%';
+            });
+        }
+
+        async function updateCasperStatus() {
+            if (isBooting) return;
+            if (window.api && window.api.checkCasperStatus) {
+                const isRunning = await window.api.checkCasperStatus();
+                const btn = document.getElementById('engineStatusText');
+                const launchCard = document.getElementById('launchCard');
+                const launchText = document.getElementById('launchText');
+
+                if (isRunning) {
+                    if (!btn.innerHTML.includes('Online')) {
+                        btn.innerHTML = `<span class="status-indicator" style="background:#32d74b;box-shadow:0 0 10px #32d74b;"></span> Online`;
+                        launchCard.style.borderColor = 'rgba(255, 59, 48, 0.4)';
+                        launchCard.style.background = 'rgba(255, 59, 48, 0.05)';
+                        launchCard.onclick = stopCasperAction;
+                        launchText.style.color = '#ff3b30';
+                        launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg> Stop casper`;
+                    }
+                } else {
+                    if (!btn.innerHTML.includes('Offline')) {
+                        btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
+                        launchCard.style.borderColor = '#3f3f3c';
+                        launchCard.style.background = '#242422';
+                        launchCard.onclick = validateAndLaunchCasper;
+                        launchText.style.color = '';
+                        launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Launch casper`;
+                    }
+                }
+            }
+        }
+
+        async function validateAndLaunchCasper() {
+            if (isBooting) return;
+            if (window.api && window.api.readEnv) {
+                const config = await window.api.readEnv();
+                
+                // Essential keys required for casper to run
+                if (!config.GEMINI_API_KEY || !config.MEM0_API_KEY || !config.LIVEKIT_URL || !config.LIVEKIT_API_KEY || !config.LIVEKIT_API_SECRET) {
+                    document.getElementById('errorModal').style.display = 'flex';
+                    return;
+                }
+
+                // If valid, start casper
+                try {
+                    isBooting = true;
+                    const btn = document.getElementById('engineStatusText');
+                    const launchText = document.getElementById('launchText');
+                    btn.innerHTML = `<span class="status-indicator" style="background:#ff9500;box-shadow:0 0 10px #ff9500;"></span> Booting Sequence...`;
+                    launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Booting...`;
+                    
+                    const result = await window.api.startCasper();
+                    if (result.status === 'success') {
+                        showToast('casper Initialization Sequence Engaged.', 'success');
+                        setTimeout(() => {
+                            isBooting = false;
+                            updateCasperStatus();
+                        }, 2500);
+                    } else {
+                        isBooting = false;
+                        showToast(result.message, 'error');
+                        btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
+                    }
+                } catch (error) {
+                    showToast('System Error starting agent.', 'error');
+                    isBooting = false;
+                    const btn = document.getElementById('engineStatusText');
+                    const launchText = document.getElementById('launchText');
+                    btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
+                    launchText.style.color = '';
+                    launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Launch casper`;
+                }
+            }
+        }
+
+        async function stopCasperAction() {
+            if (window.api && window.api.stopCasper) {
+                try {
+                    const result = await window.api.stopCasper();
+                    if (result.status === 'success') {
+                        showToast('casper Terminated.', 'success');
+                        updateCasperStatus();
+                    }
+                } catch (e) {
+                    showToast('Error stopping casper', 'error');
+                }
+            }
+        }
+        function updateVoiceTag(selectEl) {
+            // No-op — reserved for future live preview badge if desired
+        }
+
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            el.classList.add('active');
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            updateCasperStatus();
+            setInterval(updateCasperStatus, 2000);
+
+            if (window.api && window.api.onCasperError) {
+                window.api.onCasperError((errorMsg) => {
+                    const btn = document.getElementById('engineStatusText');
+                    btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
+                    const launchCard = document.getElementById('launchCard');
+                    const launchText = document.getElementById('launchText');
+                    launchCard.style.borderColor = '#3f3f3c';
+                    launchCard.style.background = '#242422';
+                    launchCard.onclick = validateAndLaunchCasper;
+                    launchText.style.color = '';
+                    launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Launch casper`;
+                    
+                    alert("Casper Backend Crashed:\n\n" + errorMsg);
+                });
+            }
+            
+            if (window.api && window.api.readEnv) {
+                const config = await window.api.readEnv();
+                
+                if (config.Casper_USER_ID) {
+                    document.getElementById('greetingText').innerText = `Good evening, ${config.Casper_USER_ID}.`;
+                }
+
+                for (const key in config) {
+                    const el = document.getElementById(key);
+                    if (el) {
+                        el.value = config[key];
+                    }
+                }
+            }
+        });
+
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('saveBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> Processing...`;
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                if (window.api && window.api.saveEnv) {
+                    const result = await window.api.saveEnv(data);
+                    
+                    if (result.status === 'success') {
+                        showToast(result.message, 'success');
+                        if (data.Casper_USER_ID) {
+                            document.getElementById('greetingText').innerText = `Good evening, ${data.Casper_USER_ID}.`;
+                        }
+                    } else {
+                        showToast(result.message, 'error');
+                    }
+                }
+            } catch (error) {
+                showToast('System Error: IPC connection failed.', 'error');
+            } finally {
+                btn.innerHTML = originalText;
+            }
+        });
+
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = message;
+            
+            const icon = document.getElementById('toastIcon');
+            if (type === 'error') {
+                icon.setAttribute('stroke', '#ff3b30');
+                icon.innerHTML = `<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>`;
+            } else {
+                icon.setAttribute('stroke', '#34c759');
+                icon.innerHTML = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>`;
+            }
+
+            toast.classList.add('show');
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C.A.S.P.E.R. Assistant</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        :root {
+            /* Default ONLINE colors */
+            --primary-color: #36a6e0;
+            --glow-color: rgba(54, 166, 224, 0.6);
+            --status-text-color: #5d6d70;
+        }
+
+        body.mode-speaking {
+            --primary-color: #3df2e5;
+            --glow-color: rgba(61, 242, 229, 0.4);
+            --status-text-color: #3df2e5;
+        }
+
+        body.mode-processing {
+            --primary-color: #fba223;
+            --glow-color: rgba(251, 162, 35, 0.5);
+            --status-text-color: #fba223;
+        }
+
+        body {
+            background-color: transparent; 
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Share Tech Mono', monospace;
+            overflow: hidden;
+            color: #fff;
+            pointer-events: none;
+        }
+
+        #casper-assistant {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            transform-origin: center center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            opacity: 1;
+        }
+
+        body.state-hidden #casper-assistant {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.8);
+        }
+
+        .hud-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .svg-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            filter: drop-shadow(0 0 6px var(--glow-color));
+            transition: filter 0.5s ease;
+        }
+
+        /* Center Text */
+        .center-text {
+            font-size: 26px;
+            font-weight: bold;
+            letter-spacing: 5px;
+            fill: #ffffff;
+            filter: drop-shadow(0 0 3px var(--glow-color));
+            pointer-events: none;
+            transition: filter 0.5s ease;
+        }
+
+        /* Base SVG Elements */
+        .teal-core {
+            fill: #0d2b2c;
+            stroke: #1d4d4f;
+            stroke-width: 4;
+            transition: all 0.4s ease;
+        }
+
+        .thin-cyan-ring {
+            fill: none;
+            stroke: var(--primary-color);
+            stroke-width: 2;
+            transition: stroke 0.5s ease;
+        }
+
+        .orange-arc {
+            fill: none;
+            stroke: #fba223;
+            stroke-width: 6;
+            stroke-linecap: round;
+            stroke-dasharray: 140 1000;
+            transform-origin: 200px 200px;
+            transform: rotate(30deg);
+            animation: online-arc-oscillation 20s ease-in-out infinite alternate;
+            transition: stroke-dasharray 1s ease, transform 1s ease, filter 0.5s ease;
+        }
+
+        .thin-cyan-arc {
+            fill: none;
+            stroke: var(--primary-color);
+            stroke-width: 2;
+            stroke-dasharray: 600 1000;
+            transform-origin: 200px 200px;
+            transform: rotate(-45deg);
+            animation: slow-spin-reverse 40s linear infinite;
+            transition: stroke 0.5s ease;
+        }
+
+        .thick-cyan-arcs {
+            fill: none;
+            stroke: var(--primary-color);
+            stroke-width: 6;
+            stroke-linecap: round;
+            stroke-dasharray: 120 250 120 250;
+            transform-origin: 200px 200px;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .radial-ticks {
+            fill: none;
+            stroke: var(--primary-color);
+            stroke-width: 14;
+            stroke-dasharray: 3 14;
+            transform-origin: 200px 200px;
+            animation: slow-spin 60s linear infinite;
+            transition: stroke 0.5s ease, filter 0.5s ease;
+        }
+
+        .scanner-line {
+            transform-origin: 200px 200px;
+            transform: rotate(-30deg);
+            animation: scanner-online-sweep 8s ease-in-out infinite alternate;
+            transition: stroke 0.5s ease;
+        }
+        
+        .speak-core-rings {
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .floating-dots {
+            transform-origin: 200px 200px;
+            animation: slow-spin 60s linear infinite;
+        }
+
+        .floating-dots circle {
+            fill: #fba223;
+            filter: drop-shadow(0 0 5px rgba(251, 162, 35, 0.8));
+        }
+
+        /* Status Area */
+        .status-container {
+            position: absolute;
+            bottom: -50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            color: var(--status-text-color);
+            transition: color 0.3s ease;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--status-text-color);
+            transition: all 0.3s ease;
+        }
+
+        .status-text {
+            font-size: 24px;
+            letter-spacing: 5px;
+            font-weight: bold;
+        }
+
+        .status-subtext {
+            font-size: 14px;
+            letter-spacing: 2px;
+            opacity: 0.7;
+        }
+
+        /* =========================================
+           SPEAKING MODE
+           ========================================= */
+        body.mode-speaking .teal-core {
+            fill: url(#coreGradient);
+            stroke: var(--primary-color);
+            stroke-width: 2;
+            animation: core-glow-pulse 2s ease-in-out infinite alternate;
+        }
+
+        body.mode-speaking .speak-core-rings {
+            opacity: 1;
+            animation: core-pulse 2s infinite alternate;
+        }
+
+        body.mode-speaking .orange-arc {
+            transform: rotate(-130deg);
+            stroke-dasharray: 100 1000;
+            filter: drop-shadow(0 0 5px #fba223);
+            animation: slow-spin 15s linear infinite;
+        }
+
+        body.mode-speaking .thick-cyan-arcs {
+            opacity: 1;
+            transform: scale(1);
+            animation: slow-spin-reverse 20s linear infinite;
+            filter: drop-shadow(0 0 5px rgba(61, 242, 229, 0.5));
+        }
+
+        body.mode-speaking .radial-ticks {
+            filter: drop-shadow(0 0 5px var(--primary-color));
+            animation: slow-spin 15s linear infinite;
+        }
+
+        body.mode-speaking .scanner-line {
+            animation: scanner-sweep 3s ease-in-out infinite alternate;
+        }
+
+        body.mode-speaking .status-text, body.mode-speaking .status-subtext {
+            text-shadow: 0 0 8px var(--glow-color);
+        }
+
+        body.mode-speaking .status-dot {
+            box-shadow: 0 0 10px var(--primary-color), 0 0 20px var(--primary-color);
+            animation: dot-pulse 0.5s infinite alternate;
+        }
+
+        /* =========================================
+           PROCESSING MODE
+           ========================================= */
+        body.mode-processing .teal-core {
+            fill: rgba(251, 162, 35, 0.1);
+            stroke: var(--primary-color);
+            stroke-width: 2;
+            animation: core-glow-pulse 2s ease-in-out infinite alternate;
+        }
+        
+        body.mode-processing .orange-arc {
+            animation: slow-spin 8s linear infinite;
+        }
+
+        body.mode-processing .radial-ticks {
+            animation: slow-spin-reverse 30s linear infinite;
+        }
+
+        body.mode-processing .scanner-line {
+            animation: scanner-sweep 2s ease-in-out infinite alternate;
+        }
+        
+        body.mode-processing .status-dot {
+            box-shadow: 0 0 10px var(--primary-color), 0 0 20px var(--primary-color);
+            animation: dot-pulse 0.3s infinite alternate;
+        }
+
+
+        /* Keyframes */
+        @keyframes slow-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes slow-spin-reverse {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(-360deg); }
+        }
+        @keyframes scanner-sweep {
+            0% { transform: rotate(-30deg); }
+            50% { transform: rotate(150deg); }
+            100% { transform: rotate(-30deg); }
+        }
+        @keyframes online-arc-oscillation {
+            0% { transform: rotate(20deg); }
+            100% { transform: rotate(50deg); }
+        }
+        @keyframes scanner-online-sweep {
+            0% { transform: rotate(-40deg); }
+            100% { transform: rotate(-10deg); }
+        }
+        @keyframes core-pulse {
+            0% { transform: scale(0.95); opacity: 0.6; stroke-width: 1px; }
+            50% { transform: scale(1.08); opacity: 1; stroke-width: 3px; }
+            100% { transform: scale(0.98); opacity: 0.8; stroke-width: 1px; }
+        }
+        @keyframes dot-pulse {
+            0% { opacity: 0.4; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1.2); }
+        }
+    </style>
+</head>
+<body>
+    <div id="casper-assistant" class="state-hidden">
+        <div class="hud-container">
+            <svg class="svg-container" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <radialGradient id="coreGradient" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" stop-color="#3df2e5" stop-opacity="0.6"/>
+                        <stop offset="40%" stop-color="#124041" stop-opacity="0.8"/>
+                        <stop offset="100%" stop-color="#0d2b2c" stop-opacity="1"/>
+                    </radialGradient>
+                </defs>
+                
+                <!-- 1. Inner Core Background -->
+                <circle cx="200" cy="200" r="55" class="teal-core" />
+                
+                <!-- Inner core expanding rings (SPEAKING) -->
+                <g class="speak-core-rings" transform-origin="200 200">
+                    <circle cx="200" cy="200" r="40" fill="none" stroke="#256e6e" stroke-width="15" opacity="0.4" />
+                    <circle cx="200" cy="200" r="65" fill="none" stroke="#3df2e5" stroke-width="1" opacity="0.5" />
+                </g>
+
+                <!-- Center Text -->
+                <text x="202" y="208" text-anchor="middle" alignment-baseline="middle" class="center-text">C.A.S.P.E.R.</text>
+
+                <!-- 2. Thin Cyan Ring -->
+                <circle cx="200" cy="200" r="80" class="thin-cyan-ring" />
+                
+                <!-- 3. Scanner Line -->
+                <g class="scanner-line">
+                    <line x1="200" y1="120" x2="200" y2="80" stroke="var(--primary-color)" stroke-width="2" />
+                </g>
+
+                <!-- 4. Thin Cyan Arc -->
+                <circle cx="200" cy="200" r="110" class="thin-cyan-arc" />
+
+                <!-- 5. Thick Cyan Arcs -->
+                <circle cx="200" cy="200" r="125" class="thick-cyan-arcs" />
+
+                <!-- 6. Thick Orange Arc -->
+                <circle cx="200" cy="200" r="115" class="orange-arc" />
+                
+                <!-- 7. Outer Thin Cyan Ring -->
+                <circle cx="200" cy="200" r="145" class="thin-cyan-ring" />
+
+                <!-- 8. Floating Orange Dots -->
+                <g class="floating-dots">
+                    <circle cx="280" cy="110" r="3.5" />
+                    <circle cx="320" cy="140" r="3.5" />
+                    <circle cx="310" cy="210" r="3.5" />
+                    <circle cx="100" cy="280" r="3.5" />
+                </g>
+
+                <!-- 9. Outer Radial Ticks -->
+                <circle cx="200" cy="200" r="165" class="radial-ticks" />
+            </svg>
+
+            <!-- Status Indicator -->
+            <div class="status-container">
+                <div class="status-row">
+                    <div class="status-dot"></div>
+                    <div class="status-text" id="status-text">ONLINE</div>
+                </div>
+                <div class="status-subtext" id="status-subtext"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $body = document.body;
+        const $statusText = document.getElementById('status-text');
+        const $statusSubtext = document.getElementById('status-subtext');
+
+        const STATES = {
+            hidden:    { mode: 'hidden',     status: '',             subtext: '' },
+            idle:      { mode: 'online',     status: 'ONLINE',       subtext: 'Listening...' },
+            listening: { mode: 'processing', status: 'LISTENING',    subtext: 'Speak now...' },
+            thinking:  { mode: 'processing', status: 'THINKING',     subtext: 'Processing...' },
+            speaking:  { mode: 'speaking',   status: 'SPEAKING',     subtext: '' },
+            waiting:   { mode: 'online',     status: 'STANDING BY',  subtext: 'Ready when you are' },
+            startup:   { mode: 'online',     status: 'INITIALIZING', subtext: 'C.A.S.P.E.R. online' },
+            tool:      { mode: 'processing', status: 'WORKING',      subtext: 'Running tool...' }
+        };
+
+        function setState(stateName) {
+            if (stateName.startsWith('custom:')) {
+                const customText = stateName.substring(7);
+                applyState('tool', customText);
+                return;
+            }
+            applyState(stateName);
+        }
+
+        function applyState(stateName, customSubtext = null) {
+            const state = STATES[stateName] || STATES.hidden;
+            
+            // Manage classes
+            $body.className = '';
+            
+            if (state.mode === 'hidden') {
+                $body.classList.add('state-hidden');
+            } else {
+                $body.classList.add('mode-' + state.mode);
+            }
+
+            // Update text
+            $statusText.textContent = state.status;
+            $statusSubtext.textContent = customSubtext !== null ? customSubtext : state.subtext;
+        }
+
+        // Electron IPC listener
+        if (window.electronAPI && window.electronAPI.onUIState) {
+            window.electronAPI.onUIState((state) => {
+                setState(state);
+            });
+        }
+
+        // Start hidden
+        setState('hidden');
+    </script>
+</body>
+</html>

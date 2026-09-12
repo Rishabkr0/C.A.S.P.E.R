@@ -1,0 +1,100 @@
+import sys
+import os
+import threading
+
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+from PySide6.QtCore import Qt, QObject, Signal, QUrl, QTimer
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtGui import QColor
+
+
+class StateUpdater(QObject):
+    update_signal = Signal(str)
+
+
+def listen_for_commands(updater):
+    """Read state commands from stdin (sent by agent.py via subprocess)."""
+    while True:
+        try:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            updater.update_signal.emit(line.strip())
+        except Exception:
+            break
+
+
+class CasperOverlay(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # Frameless + always on top + transparent
+        self.setWindowFlags(
+            Qt.FramelessWindowHint |
+            Qt.WindowStaysOnTopHint |
+            Qt.Tool
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+
+        # Size the window for right-side avatar assistant
+        # 200px wide x 320px tall for the character + status text
+        WIN_W, WIN_H = 200, 320
+        screen = QApplication.primaryScreen().geometry()
+        x = screen.width() - WIN_W - 10  # 10px from right edge
+        y = (screen.height() - WIN_H) // 2  # centered vertically
+        self.setGeometry(x, y, WIN_W, WIN_H)
+
+        # QWebEngineView fills the whole window
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.view = QWebEngineView(self)
+        self.view.setAttribute(Qt.WA_TranslucentBackground)
+        self.view.setAttribute(Qt.WA_NoSystemBackground)
+        self.view.page().setBackgroundColor(QColor(Qt.transparent))
+
+        if getattr(sys, 'frozen', False):
+            base_dir = sys._MEIPASS
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+        html_path = os.path.join(base_dir, 'jarvis_ui_side.html')
+        self.view.load(QUrl.fromLocalFile(html_path))
+        self.view.loadFinished.connect(self._on_load)
+
+        layout.addWidget(self.view)
+
+        # Stdin command listener (agent.py pipes state strings here)
+        self.updater = StateUpdater()
+        self.updater.update_signal.connect(self.set_state)
+        threading.Thread(
+            target=listen_for_commands,
+            args=(self.updater,),
+            daemon=True
+        ).start()
+
+    def _on_load(self, ok):
+        """Brief startup animation so user can confirm the overlay is alive."""
+        if ok:
+            QTimer.singleShot(300,  lambda: self.set_state('listening'))
+            QTimer.singleShot(3500, lambda: self.set_state('idle'))
+
+    def set_state(self, state):
+        """
+        Map agent state strings to JS setState() calls.
+        Handles: idle, listening, speaking, waiting, thinking, tool, custom:<text>
+        """
+        safe = state.replace("'", "\\'").replace('"', '\\"')
+        self.view.page().runJavaScript(f"setState('{safe}')")
+
+
+def main():
+    app = QApplication(sys.argv)
+    overlay = CasperOverlay()
+    overlay.show()
+    sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+    main()
