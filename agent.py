@@ -11,7 +11,7 @@ from livekit.agents import AgentSession, Agent, RoomInputOptions, ChatContext
 from livekit.plugins import noise_cancellation
 from livekit.plugins import google
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
-from tools import get_weather, search_web, send_email
+from tools import get_weather, search_web, send_email, play_music, stop_music, add_to_queue, skip_song, get_queue, set_music_volume, play_obsidian_playlist
 try:
     from office_tools import OFFICE_TOOLS as _OFFICE_TOOLS
 except ImportError:
@@ -171,7 +171,7 @@ atexit.register(stop_ui)
 class Assistant(Agent):
     def __init__(self, chat_ctx=None, lazy_load_chrome=False) -> None:
         # Build base tool list (memory tools are critical for persistence)
-        _base_tools = [get_weather, search_web, send_email, control_computer, save_memory, recall_memory] + _OFFICE_TOOLS + _GOOGLE_TOOLS + _OBSIDIAN_TOOLS
+        _base_tools = [get_weather, search_web, send_email, play_music, stop_music, add_to_queue, skip_song, get_queue, set_music_volume, play_obsidian_playlist, control_computer, save_memory, recall_memory] + _OFFICE_TOOLS + _GOOGLE_TOOLS + _OBSIDIAN_TOOLS
 
         # FIX: Gemini Realtime (gemini-3.1-flash-live-preview) does NOT support mid-session tool updates
         # Log warning: "has limited mid-session update support. instructions, chat context, and tool updates

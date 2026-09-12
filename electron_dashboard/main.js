@@ -41,7 +41,7 @@ function createOverlay() {
     }
   });
 
-  overlayWindow.setIgnoreMouseEvents(true);
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   const uiPath = app.isPackaged
     ? path.join(process.resourcesPath, 'jarvis_ui_side.html')
     : path.join(__dirname, '..', 'jarvis_ui_side.html');

@@ -1,6 +1,6 @@
 {
   "name": "electron_dashboard",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "",
   "main": "main.js",
   "scripts": {
@@ -16,23 +16,23 @@
       "icon": "icon.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico"
+      "uninstallerIcon": "icon.ico",
+      "license": "build/license.txt",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp"
     },
     "publish": {
       "provider": "github",
       "owner": "Rishabkr0",
-      "repo": "Casper"
+      "repo": "C.A.S.P.E.R"
     },
     "extraResources": [
-      {
-        "from": "../dist/casper_backend",
-        "to": "casper_backend"
-      },
       {
         "from": "..",
         "to": ".",
@@ -47,9 +47,20 @@
           "jarvis_overlay.py",
           "jarvis_ui.html",
           "computer_use.py",
+          "computer_use_enhanced.py",
+          "computer_use_original.py",
           "uia_control.py",
           "ui_state.py",
-          "requirements.txt"
+          "tools.py",
+          "media_player.py",
+          "obsidian_tools.py",
+          "google_tools.py",
+          "office_tools.py",
+          "vision_fallback.py",
+          "credentials.json",
+          "requirements.txt",
+          ".venv/**/*",
+          "bin/**/*"
         ]
       }
     ]

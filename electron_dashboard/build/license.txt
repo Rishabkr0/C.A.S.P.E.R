@@ -1,0 +1,17 @@
+END USER LICENSE AGREEMENT (EULA) for C.A.S.P.E.R
+
+By installing C.A.S.P.E.R ("Clearly A Somewhat Pretty Excellent Robot"), you agree to the following terms:
+
+1. ACCEPTANCE
+You are officially granting Casper permission to reside on your computer. He promises to be helpful, occasionally snarky, and (mostly) obedient.
+
+2. USAGE
+This software is provided "as is". You are free to use it to boost your productivity, control your music, take notes in Obsidian, and automate your workflow. 
+
+3. PRIVACY & DATA
+Casper respects your privacy. Your data, notes, and tasks remain entirely on your local machine unless you explicitly authorize integrations. 
+
+4. DISCLAIMER
+Rishab and the developers of C.A.S.P.E.R are not responsible if Casper becomes a bit too sarcastic or refuses to play Nickelback. 
+
+If you agree to these terms, please click "I Agree" to begin the installation!
