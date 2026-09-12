@@ -19,7 +19,7 @@ Need a report generated in Excel or Word? Casper uses zero-setup local COM autom
 ### 3. ⚡ Lightning-Fast Web Execution
 Because Casper uses direct Chrome DevTools integration instead of slow vision models to navigate the web, it achieves incredible speeds:
 - Skip YouTube Ads in **<500ms**
-- Play Spotify songs in **<2s**
+- Play songs in **<2s**
 - Instantly read Gmail, fill forms, and extract webpage content
 
 ### 4. 🖥️ Always-On Desktop Avatar
@@ -30,7 +30,7 @@ Casper doesn't hide in a terminal. It features a frameless, transparent PySide6 
 ## 🚀 Core Features
 
 * **🌐 Advanced Chrome Control:** Full multi-tab management, session control, ad-blocking capabilities, and webpage visual diffing.
-* **🎵 Media Mastery:** Complete automation for YouTube (search, play, skip ads) and Spotify (search, play, playlists, likes).
+* **🎵 Media Mastery:** Complete automation for YouTube (search, play, skip ads) and music platforms (search, play, playlists).
 * **📧 Google Workspace Native:** Direct OAuth integration with Google APIs for Gmail, Calendar, and Sheets management.
 * **💼 Microsoft Office Native:** Full control over MS Word, Excel, and PowerPoint.
 * **🗣️ Voice & Vision (LiveKit):** Talk directly to Casper and share your screen/camera using LiveKit agents and plugins.
