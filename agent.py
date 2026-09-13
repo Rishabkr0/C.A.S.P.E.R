@@ -1,8 +1,19 @@
 import asyncio
 import sys
-if sys.platform == 'win32':
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+import traceback
+
+def write_crash_log(msg):
+    with open("crash.log", "a") as f:
+        f.write(msg + "\n")
+
+try:
+    if sys.platform == 'win32':
+        if sys.stdout is not None:
+            sys.stdout.reconfigure(encoding='utf-8')
+        if sys.stderr is not None:
+            sys.stderr.reconfigure(encoding='utf-8')
+except Exception as e:
+    write_crash_log(f"reconfigure error: {e}")
 
 from dotenv import load_dotenv
 
@@ -139,6 +150,8 @@ ui_process = None
 
 def start_ui():
     global ui_process
+    if os.getenv("DISABLE_PYSIDE_UI") == "1":
+        return
     try:
         # Launch the overlay with stdin pipe
         ui_process = subprocess.Popen([sys.executable, "jarvis_overlay.py"], stdin=subprocess.PIPE)
@@ -147,12 +160,21 @@ def start_ui():
 
 def update_ui(state):
     global ui_process
+    # Send state to old PySide6 overlay (if running)
     if ui_process and ui_process.stdin:
         try:
             ui_process.stdin.write((state + '\n').encode('utf-8'))
             ui_process.stdin.flush()
         except Exception:
             pass
+    # Send state to new Electron overlay via UDP
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(state.encode('utf-8'), ('127.0.0.1', 49152))
+        sock.close()
+    except Exception:
+        pass
 
 def stop_ui():
     global ui_process
@@ -453,4 +475,9 @@ async def entrypoint(ctx: agents.JobContext):
     ctx.add_shutdown_callback(full_shutdown)
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    try:
+        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    except Exception as e:
+        write_crash_log(f"run_app error: {traceback.format_exc()}")
+
+
