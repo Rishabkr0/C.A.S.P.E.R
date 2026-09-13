@@ -267,24 +267,25 @@ ipcMain.handle('start-casper', () => {
       : path.join(__dirname, '..');
       
     // Try to launch the compiled executable first (for portable distribution)
-    const exePath = path.join(backendDir, 'casper_backend', 'casper_backend.exe');
+    const exePath = path.join(backendDir, 'dist', 'casper_backend', 'casper_backend.exe');
     
     let command, args, cwdToUse;
     
+    const logPath = path.join(app.getPath('userData'), 'casper.log');
+    
     if (fs.existsSync(exePath)) {
-        command = 'cmd.exe';
-        args = ['/c', `casper_backend.exe console > casper.log 2>&1`];
-        cwdToUse = path.join(backendDir, 'casper_backend');
+        command = exePath;
+        args = ['console'];
+        cwdToUse = path.join(backendDir, 'dist', 'casper_backend');
     } else {
         // Fallback to virtual environment (development mode)
-        const batScript = `.venv\\Scripts\\python.exe agent.py console > casper.log 2>&1`;
-        command = 'cmd.exe';
-        args = ['/c', batScript];
+        command = path.join(backendDir, '.venv', 'Scripts', 'python.exe');
+        args = ['agent.py', 'console'];
         cwdToUse = backendDir;
     }
 
     // Read .env from userData and inject it so agent.py can access it
-    const envVars = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+    const envVars = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8', DISABLE_PYSIDE_UI: '1', USER_DATA_PATH: app.getPath('userData') };
     try {
       if (fs.existsSync(ENV_PATH)) {
         const content = fs.readFileSync(ENV_PATH, 'utf-8');
@@ -303,19 +304,26 @@ ipcMain.handle('start-casper', () => {
       console.error('Failed to parse .env', e);
     }
 
+    // Write log file from Node.js side instead of shell redirection
+    const logStream = fs.createWriteStream(logPath, { flags: 'w' });
+
     casperProcess = spawn(command, args, {
       cwd: cwdToUse,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       env: envVars
     });
+
+    // Pipe stdout and stderr to the log file
+    if (casperProcess.stdout) casperProcess.stdout.pipe(logStream);
+    if (casperProcess.stderr) casperProcess.stderr.pipe(logStream);
     
     isIntentionalStop = false;
     casperProcess.on('exit', (code) => {
       casperProcess = null;
       destroyOverlay();
       if (!isIntentionalStop && code !== 0 && code !== null) {
-        const logPath = path.join(cwdToUse, 'casper.log');
+        // Use the globally defined logPath
         if (fs.existsSync(logPath)) {
           const logContent = fs.readFileSync(logPath, 'utf8');
           const lines = logContent.split('\n').filter(l => l.trim() !== '');
