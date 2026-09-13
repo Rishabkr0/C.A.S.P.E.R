@@ -24,8 +24,9 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly'
 ]
 
-CREDENTIALS_FILE = 'credentials.json'
-TOKEN_FILE = 'token.json'
+USER_DATA_PATH = os.getenv("USER_DATA_PATH", os.getcwd())
+CREDENTIALS_FILE = os.path.join(USER_DATA_PATH, 'credentials.json')
+TOKEN_FILE = os.path.join(USER_DATA_PATH, 'token.json')
 
 def _get_google_credentials():
     """Handles the OAuth2 flow and returns valid credentials."""
