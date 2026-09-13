@@ -12,7 +12,11 @@ import os
 import json
 import time
 import psutil
+import base64
 from typing import Optional, Dict, Any, List
+
+# Get USER_DATA_PATH for writeable config directories
+USER_DATA_PATH = os.getenv("USER_DATA_PATH", os.getcwd())
 
 logger = logging.getLogger("chrome-mcp")
 
@@ -89,8 +93,8 @@ class ChromeMCPServer:
         Get the best Chrome profile path:
         Using a temporary profile to avoid locking issues with the user's main Chrome instance.
         """
-        # Fallback to temporary profile
-        temp_profile = os.path.join(os.getcwd(), "chrome_profile")
+        # Fallback to temporary profile in USER_DATA_PATH to avoid permissions issues
+        temp_profile = os.path.join(USER_DATA_PATH, "chrome_profile")
         logger.info(f"Using temporary Chrome profile at: {temp_profile}")
         return temp_profile
 
@@ -200,7 +204,7 @@ class ChromeMCPServer:
             # If we tried to use real profile and it failed, retry with temp profile
             if "User Data" in self.user_data_dir:
                 logger.warning("Real Chrome profile is locked. Falling back to temporary profile...")
-                self.user_data_dir = os.path.join(os.getcwd(), "chrome_profile")
+                self.user_data_dir = os.path.join(USER_DATA_PATH, "chrome_profile")
                 os.makedirs(self.user_data_dir, exist_ok=True)
 
                 # Retry with temp profile
