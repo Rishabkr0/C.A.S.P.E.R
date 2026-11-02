@@ -401,18 +401,161 @@ async def diagnose_and_fix_code(
         "voice_summary": "I had difficulty analyzing the code, Boss. Please ensure the code is visible on screen."
     }
 
+async def write_code_to_ide(
+    task_description: str = "",
+    filename: str = "",
+    provided_code: str = ""
+) -> str:
+    """
+    Writes, generates, or updates code directly in VS Code:
+    1. Determines or creates the target file in the project workspace.
+    2. Uses Gemini to write 100% complete, runnable, production-quality code if not provided.
+    3. Writes the file to disk and opens/reloads it directly in VS Code via `code -r <path>`.
+    4. Focuses the editor window.
+    5. Returns articulate JARVIS voice confirmation.
+    """
+    import subprocess
+    import pyautogui
+    import pyperclip
+
+    # 1. Determine target filename
+    if not filename:
+        filename = extract_filename_from_prompt(task_description) or ""
+
+    ide_info = get_ide_window_info()
+    hwnd = ide_info.get("hwnd")
+    active_file = ide_info.get("active_filename")
+
+    if not filename and active_file:
+        filename = active_file
+
+    if not filename:
+        # Deduce intelligent default from task description
+        task_low = task_description.lower()
+        if any(k in task_low for k in ["html", "website", "web page"]):
+            filename = "index.html"
+        elif any(k in task_low for k in ["javascript", "js", "node", "express"]):
+            filename = "app.js"
+        elif any(k in task_low for k in ["typescript", "ts"]):
+            filename = "index.ts"
+        elif any(k in task_low for k in ["css", "style"]):
+            filename = "styles.css"
+        else:
+            filename = "main.py"
+
+    # 2. Extract or generate code
+    code_to_write = provided_code
+    if not code_to_write:
+        code_to_write = extract_code_from_text(task_description) or ""
+
+    voice_summary = ""
+
+    if not code_to_write or len(code_to_write.strip()) < 15:
+        api_key = os.getenv("GEMINI_API_KEY")
+        client = genai.Client(api_key=api_key) if api_key else genai.Client()
+
+        prompt = (
+            "You are Casper (Clearly A Somewhat Pretty Excellent Robot), Rishab's personal desktop AI assistant and elite principal engineer.\n"
+            f"Active File: '{filename}'\n"
+            f"Instruction: {task_description}\n\n"
+            "REQUIREMENTS:\n"
+            "1. Write complete, production-grade, 100% runnable code implementing the requested feature/task.\n"
+            "2. Include all necessary imports, clean docstrings, robust error handling, and a runnable block where appropriate.\n"
+            "3. Do NOT use placeholders, TODOs, or truncate code.\n"
+            "4. Start with a 1-2 sentence spoken JARVIS summary for Boss.\n"
+            "5. Wrap the code in a single markdown code block: ```language ... ```\n"
+        )
+
+        model_candidates = [
+            os.getenv("GEMINI_CODE_MODEL", "gemini-3.5-flash-lite"),
+            "gemini-3.5-flash-lite",
+            "gemini-3-flash-preview",
+            "gemini-2.5-flash",
+        ]
+        unique_models = list(dict.fromkeys(model_candidates))
+
+        for model_name in unique_models:
+            try:
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=model_name,
+                    contents=[prompt],
+                    config=types.GenerateContentConfig(temperature=0.2)
+                )
+                if response and response.text:
+                    res_text = response.text.strip()
+                    extracted = extract_code_from_text(res_text)
+                    code_to_write = extracted if extracted else res_text
+
+                    # Extract voice summary
+                    if "```" in res_text:
+                        summary_part = res_text.split("```")[0].strip()
+                        if summary_part:
+                            voice_summary = summary_part.replace("\n", " ")
+                    break
+            except Exception as e:
+                logger.warning(f"Model {model_name} code generation failed: {e}")
+                continue
+
+    if not code_to_write:
+        return f"I had difficulty generating the code for '{filename}', Boss. Please check your prompt and try again."
+
+    if not voice_summary:
+        voice_summary = f"Boss, I have written the complete code for '{filename}' and updated it in your editor."
+
+    # 3. Locate or create target file path in workspace
+    file_path = find_file_on_disk(filename)
+    if not file_path:
+        workspace_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(workspace_dir, filename)
+
+    # 4. Write code to disk with UTF-8 encoding
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(code_to_write)
+        logger.info(f"Successfully wrote code to {file_path}")
+    except Exception as fe:
+        logger.error(f"Error writing to file {file_path}: {fe}")
+        return f"Failed to save code to '{filename}': {fe}"
+
+    # 5. Open / Reload in VS Code using the native CLI
+    try:
+        subprocess.Popen(["code", "-r", file_path], shell=True)
+        logger.info(f"Triggered VS Code CLI: code -r {file_path}")
+    except Exception as ce:
+        logger.warning(f"Could not open file via 'code' CLI: {ce}")
+
+    # 6. Also focus the window if hwnd is known, or paste if untitled
+    if hwnd:
+        try:
+            bring_window_to_front(hwnd)
+            time.sleep(0.1)
+            pyperclip.copy(code_to_write)
+        except Exception:
+            pass
+
+    return f"{voice_summary}\n\nSaved and loaded in VS Code: {os.path.basename(file_path)}"
+
 async def inspect_and_fix_code(task_description: str = "") -> str:
     """
-    Direct code inspection and fix workflow (Zero To-Do list UI):
-    1. Finds active IDE on screen or mentioned file.
-    2. Reads the actual code directly from editor buffer, disk, or user prompt.
-    3. Performs holistic multi-bug diagnosis with Gemini 3.5 Flash Lite.
-    4. Pastes the corrected code directly into the editor and saves (Ctrl+A -> Ctrl+V -> Ctrl+S).
-    5. Synchronizes to disk if file path exists.
+    Direct code inspection, writing, and fix workflow:
+    1. If user asked to write, create, or implement code, routes to write_code_to_ide.
+    2. Otherwise finds active IDE on screen or mentioned file.
+    3. Reads the actual code directly from editor buffer, disk, or user prompt.
+    4. Performs holistic multi-bug diagnosis with Gemini.
+    5. Pastes the corrected code directly into the editor and synchronizes to disk.
     6. Returns articulate voice confirmation.
     """
     import pyautogui
     import pyperclip
+
+    # Route creation/writing tasks directly to write_code_to_ide
+    creation_keywords = ["write", "create", "implement", "build", "generate", "code for", "make a script", "add a script", "add function", "add class"]
+    task_low = task_description.lower()
+    is_creation = any(kw in task_low for kw in creation_keywords) and not any(kw in task_low for kw in ["fix", "bug", "error", "issue", "wrong", "broken", "why"])
+    if is_creation:
+        return await write_code_to_ide(task_description=task_description)
 
     # 1. Determine target file & IDE window
     mentioned_file = extract_filename_from_prompt(task_description)
@@ -463,7 +606,8 @@ async def inspect_and_fix_code(task_description: str = "") -> str:
             code_text = extracted
 
     if not code_text:
-        return f"Boss, I could not find or access the code for '{filename}'. Please make sure the file is open on your screen."
+        # If code was empty, user wants code written!
+        return await write_code_to_ide(task_description=task_description, filename=filename)
 
     # Capture screen image if possible
     screenshot_bytes, _, _ = capture_screen_image(rect)
@@ -477,6 +621,9 @@ async def inspect_and_fix_code(task_description: str = "") -> str:
     )
 
     if not diagnosis.get("has_bug"):
+        # If user asked for an addition/modification
+        if any(kw in task_low for kw in ["add", "write", "update", "modify", "change", "insert", "implement"]):
+            return await write_code_to_ide(task_description=task_description, filename=filename)
         return f"Boss, I reviewed your code in '{filename}'. Everything appears clean and syntactically sound. No errors detected."
 
     full_fixed_code = diagnosis.get("full_fixed_code")
