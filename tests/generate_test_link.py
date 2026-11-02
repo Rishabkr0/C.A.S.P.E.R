@@ -1,8 +1,11 @@
 import os
+import sys
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parent.parent
 from dotenv import load_dotenv
 from livekit import api
 
-load_dotenv()
+load_dotenv(ROOT_DIR / ".env")
 
 # Generate a token for a user to join the test room
 token = api.AccessToken(

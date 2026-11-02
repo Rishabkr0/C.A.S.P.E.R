@@ -155,7 +155,7 @@ async def play_music(
     context: RunContext,  # type: ignore
     song_name: str) -> str:
     """
-    Search and play a song in the background.
+    Search and play a song invisibly in the background. Use this tool by default for playing music, instead of the Chrome MCP browser, unless the user explicitly asks to open Spotify or YouTube in the browser.
     """
     logging.info(f"play_music called for '{song_name}'")
     return media_player.play_song(song_name)
@@ -205,6 +205,18 @@ async def set_music_volume(
     Set the volume of the background music player (0 to 100).
     """
     return media_player.set_music_volume(level)
+
+@function_tool()
+async def seek_song(
+    context: RunContext,  # type: ignore
+    seconds: int) -> str:
+    """
+    Seek or jump to a specific timestamp in the currently playing song (in seconds).
+    Examples:
+    - seconds=60 to jump to 1 minute into the song
+    - seconds=120 to jump to 2 minutes into the song
+    """
+    return media_player.seek_song(seconds)
 
 @function_tool()
 async def play_obsidian_playlist(

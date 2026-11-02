@@ -13,27 +13,47 @@ const OLD_ENV_PATH = app.isPackaged
   : path.join(__dirname, '..', '.env');
 
 let overlayWindow = null;
+let musicWindow = null;
 let udpServer = null;
+let overlayRevealTimeout = null;
+let cursorInterval = null;
+let lastCursorX = -1;
+let lastCursorY = -1;
+
+function revealOverlay() {
+  if (overlayRevealTimeout) {
+    clearTimeout(overlayRevealTimeout);
+    overlayRevealTimeout = null;
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    if (!overlayWindow.isVisible()) {
+      overlayWindow.showInactive();
+    }
+  }
+}
 
 function createOverlay() {
   if (overlayWindow) return;
   
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-  const WIN_W = 320;
-  const WIN_H = 320;
+  const screenBounds = primaryDisplay.bounds;
+  const WIN_H = screenBounds.height;
 
   overlayWindow = new BrowserWindow({
-    width: WIN_W,
+    width: screenBounds.width,
     height: WIN_H,
-    x: width - WIN_W - 10,
-    y: Math.round((height - WIN_H) / 2),
+    x: screenBounds.x,
+    y: screenBounds.y,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     focusable: false,
     skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    show: false, // Delay appearance until Chrome / backend is ready
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -47,28 +67,66 @@ function createOverlay() {
     : path.join(__dirname, '..', 'jarvis_ui_side.html');
   overlayWindow.loadFile(uiPath);
 
+  // Safety fallback: if no UDP ready signal received within 5000ms, reveal overlay anyway
+  if (overlayRevealTimeout) {
+    clearTimeout(overlayRevealTimeout);
+  }
+  overlayRevealTimeout = setTimeout(() => {
+    revealOverlay();
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('ui-state', 'startup');
+    }
+  }, 5000);
+
   if (!udpServer) {
     udpServer = dgram.createSocket('udp4');
     udpServer.on('message', (msg) => {
       const state = msg.toString().trim();
-      if (overlayWindow) {
+      revealOverlay();
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.webContents.send('ui-state', state);
       }
     });
     udpServer.bind(49152);
   }
+
+  if (!cursorInterval) {
+    cursorInterval = setInterval(() => {
+      if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+        const pt = screen.getCursorScreenPoint();
+        if (pt.x !== lastCursorX || pt.y !== lastCursorY) {
+          lastCursorX = pt.x;
+          lastCursorY = pt.y;
+          overlayWindow.webContents.send('cursor-trail-pos', { x: pt.x, y: pt.y });
+        }
+      }
+    }, 16);
+  }
 }
 
 function destroyOverlay() {
+  if (overlayRevealTimeout) {
+    clearTimeout(overlayRevealTimeout);
+    overlayRevealTimeout = null;
+  }
   if (overlayWindow) {
     overlayWindow.close();
     overlayWindow = null;
+  }
+  if (musicWindow) {
+    musicWindow.close();
+    musicWindow = null;
   }
   if (udpServer) {
     udpServer.close();
     udpServer = null;
   }
+  if (cursorInterval) {
+    clearInterval(cursorInterval);
+    cursorInterval = null;
+  }
 }
+
 
 const ENV_EXAMPLE_PATH = app.isPackaged 
   ? path.join(process.resourcesPath, '.env.example')
@@ -161,6 +219,29 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
+ipcMain.handle('ui-command', async (event, cmd) => {
+  try {
+    if (cmd === 'CMD:STOP') {
+      const { exec } = require('child_process');
+      exec('taskkill /im ffplay.exe /F', () => {});
+    }
+    const client = dgram.createSocket('udp4');
+    client.send(cmd, 49153, '127.0.0.1', (err) => {
+      client.close();
+    });
+    return { status: 'success' };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
+});
+
+ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+  // Toggle for whichever window sent the event
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setIgnoreMouseEvents(ignore, options);
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

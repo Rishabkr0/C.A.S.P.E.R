@@ -95,6 +95,134 @@ async def chrome_get_current_url(context: RunContext) -> str:
 
 
 # ============================================
+# CASPER DOM AGENT & GHOST CURSOR TOOLS
+# ============================================
+
+@function_tool()
+async def chrome_scan_page(
+    context: RunContext,
+    show_badges: bool = False
+) -> str:
+    """
+    Scan the current webpage for all visible interactive elements (buttons, inputs, links).
+    Indexes each element with its numeric ID for precise clicking and typing.
+    Badges are hidden by default to keep the browsing interface clean.
+
+    Args:
+        show_badges: Whether to display visual numeric badges on the webpage (defaults to False for clean view)
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available. Please ensure Chrome is running."
+
+    try:
+        logger.info("Scanning page for interactive elements with Set-of-Marks badges...")
+        result = await chrome_server.call_tool("scan_page", {"show_badges": show_badges})
+        content = result.get("content", ["No elements found"])
+        return content[0] if isinstance(content, list) and content else str(content)
+    except Exception as e:
+        logger.error(f"Page scan failed: {e}")
+        return f"Failed to scan page: {str(e)}"
+
+
+@function_tool()
+async def chrome_click_element_by_id(
+    context: RunContext,
+    element_id: int
+) -> str:
+    """
+    Click an element on the webpage using its Casper Set-of-Marks numeric ID (obtained from chrome_scan_page).
+    Casper's visual ghost cursor will glide across the screen to the target element and click it with a ripple effect.
+
+    Args:
+        element_id: The numeric ID of the element to click (e.g. 1, 2, 3)
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available."
+
+    try:
+        logger.info(f"Clicking element ID: {element_id}")
+        result = await chrome_server.call_tool("click_id", {"id": element_id})
+        content = result.get("content", [f"Clicked element {element_id}"])
+        return content[0] if isinstance(content, list) and content else str(content)
+    except Exception as e:
+        logger.error(f"Click by ID failed: {e}")
+        return f"Failed to click element {element_id}: {str(e)}"
+
+
+@function_tool()
+async def chrome_type_element_by_id(
+    context: RunContext,
+    element_id: int,
+    text: str,
+    press_enter: bool = False
+) -> str:
+    """
+    Type text into an input or textarea using its Casper Set-of-Marks numeric ID.
+    Casper's ghost cursor will glide to the input, click to focus, type the text, and optionally press Enter.
+
+    Args:
+        element_id: The numeric ID of the input field (e.g. 1, 2, 3)
+        text: The text to type
+        press_enter: Whether to press Enter after typing (useful for search bars)
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available."
+
+    try:
+        logger.info(f"Typing into element ID {element_id}: {text}")
+        result = await chrome_server.call_tool("type_id", {
+            "id": element_id,
+            "text": text,
+            "press_enter": press_enter
+        })
+        content = result.get("content", [f"Typed into element {element_id}"])
+        return content[0] if isinstance(content, list) and content else str(content)
+    except Exception as e:
+        logger.error(f"Type by ID failed: {e}")
+        return f"Failed to type into element {element_id}: {str(e)}"
+
+
+@function_tool()
+async def chrome_move_cursor(
+    context: RunContext,
+    x: int,
+    y: int
+) -> str:
+    """
+    Glide Casper's ghost cursor to specific viewport coordinates (x, y) with animation.
+
+    Args:
+        x: Horizontal coordinate in pixels
+        y: Vertical coordinate in pixels
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available."
+
+    try:
+        result = await chrome_server.call_tool("move_cursor", {"x": x, "y": y})
+        content = result.get("content", [f"Moved cursor to ({x}, {y})"])
+        return content[0] if isinstance(content, list) and content else str(content)
+    except Exception as e:
+        return f"Failed to move cursor: {str(e)}"
+
+
+@function_tool()
+async def chrome_clear_overlays(context: RunContext) -> str:
+    """
+    Clear all Casper Set-of-Marks badges, highlights, and status labels from the webpage.
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available."
+
+    try:
+        result = await chrome_server.call_tool("clear_overlays", {})
+        content = result.get("content", ["Overlays cleared"])
+        return content[0] if isinstance(content, list) and content else str(content)
+    except Exception as e:
+        return f"Failed to clear overlays: {str(e)}"
+
+
+# ============================================
 # PAGE INTERACTION
 # ============================================
 
@@ -323,6 +451,46 @@ async def youtube_play_video(
 
 
 @function_tool()
+async def youtube_play_nth_video(context: RunContext, index: int = 1) -> str:
+    """
+    Play the nth video on the current YouTube page (home or search results).
+    
+    Args:
+        index: The position of the video to play (1 for first, 2 for second, etc.)
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available."
+
+    try:
+        script = f"""
+        (async function() {{
+            // Give the page a moment if it just loaded
+            await new Promise(r => setTimeout(r, 1000));
+            // Try home page video or search result video
+            const selectors = [
+                'ytd-rich-item-renderer a#video-title-link', // Home page
+                'ytd-video-renderer a#video-title' // Search results
+            ];
+            
+            for (const selector of selectors) {{
+                const videos = Array.from(document.querySelectorAll(selector)).filter(v => v.offsetParent !== null);
+                if (videos.length >= {index}) {{
+                    videos[{index} - 1].click();
+                    return 'Playing video number {index}';
+                }}
+            }}
+            return 'Could not find video number {index} on current page';
+        }})();
+        """
+
+        result = await chrome_execute_javascript(context, script)
+        return result
+    except Exception as e:
+        return f"Failed to play video number {index}: {{str(e)}}"
+
+
+
+@function_tool()
 async def youtube_control_playback(
     context: RunContext,
     action: str
@@ -510,6 +678,81 @@ async def youtube_set_volume(
         return f"Volume set to {volume}%"
     except Exception as e:
         return f"Failed to set volume: {str(e)}"
+
+
+@function_tool()
+async def youtube_set_quality(
+    context: RunContext,
+    quality: str
+) -> str:
+    """
+    Set YouTube video quality/resolution.
+
+    Args:
+        quality: Desired quality (e.g., "1080p", "720p", "480p", "Auto")
+    """
+    if not chrome_server or not chrome_server.connected:
+        return "Chrome automation not available."
+
+    script = f"""
+    (async function() {{
+        const quality = "{quality}";
+        const settingsBtn = document.querySelector('.ytp-settings-button');
+        if (!settingsBtn) return 'Settings button not found';
+        
+        let isExpanded = settingsBtn.getAttribute('aria-expanded') === 'true';
+        if (!isExpanded) {{
+            settingsBtn.click();
+            await new Promise(r => setTimeout(r, 400));
+        }}
+        
+        const menuItems = Array.from(document.querySelectorAll('.ytp-panel-menu .ytp-menuitem'));
+        const qualityItem = menuItems.find(el => {{
+            const label = el.querySelector('.ytp-menuitem-label');
+            if (!label) return false;
+            const text = label.textContent.trim().toLowerCase();
+            return text === 'quality' || text === 'गुणवत्ता'; 
+        }});
+        
+        if (!qualityItem) {{
+            const panelTitle = document.querySelector('.ytp-panel-title');
+            if (panelTitle && (panelTitle.textContent.toLowerCase() === 'quality' || panelTitle.textContent.includes('गुण'))) {{
+                // already in quality menu
+            }} else {{
+                settingsBtn.click();
+                return 'Quality menu not found';
+            }}
+        }} else {{
+            qualityItem.click();
+            await new Promise(r => setTimeout(r, 400));
+        }}
+        
+        const qualityOptions = Array.from(document.querySelectorAll('.ytp-panel-menu .ytp-menuitem'));
+        const targetOption = qualityOptions.find(el => {{
+            const label = el.querySelector('.ytp-menuitem-label');
+            if (!label) return false;
+            const text = label.textContent.toLowerCase();
+            const q = quality.toLowerCase();
+            return text.includes(q) || (q === 'auto' && text.includes('auto'));
+        }});
+        
+        if (targetOption) {{
+            targetOption.click();
+            return 'Video quality set to ' + quality;
+        }} else {{
+            settingsBtn.click();
+            const available = qualityOptions.map(el => el.querySelector('.ytp-menuitem-label')?.textContent).filter(Boolean);
+            return 'Quality ' + quality + ' not available. Options: ' + available.join(', ');
+        }}
+    }})();
+    """
+
+    try:
+        result = await chrome_execute_javascript(context, script)
+        return result
+    except Exception as e:
+        return f"Failed to set quality: {{str(e)}}"
+
 
 
 @function_tool()
@@ -1038,6 +1281,11 @@ async def chrome_visual_diff(context: RunContext, url1: str, url2: str) -> str:
 
 # Export all tools
 CHROME_TOOLS = [
+    chrome_scan_page,
+    chrome_click_element_by_id,
+    chrome_type_element_by_id,
+    chrome_move_cursor,
+    chrome_clear_overlays,
     chrome_navigate,
     chrome_open_new_tab,
     chrome_close_tab,
@@ -1050,11 +1298,13 @@ CHROME_TOOLS = [
     youtube_skip_ad,
     youtube_search,
     youtube_play_video,
+    youtube_play_nth_video,
     youtube_control_playback,
     youtube_skip_forward,
     youtube_skip_backward,
     youtube_set_playback_speed,
     youtube_set_volume,
+    youtube_set_quality,
     youtube_volume_up,
     youtube_volume_down,
     youtube_toggle_theater_mode,

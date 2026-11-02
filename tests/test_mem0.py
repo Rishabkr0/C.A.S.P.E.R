@@ -1,13 +1,17 @@
+import sys
+import os
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from dotenv import load_dotenv
+load_dotenv(ROOT_DIR / ".env")
 from mem0 import MemoryClient
 import logging
 import json
 
-
-load_dotenv()
 user_name = 'David'
-# Pass api_key explicitly (avoids env lookup issues) — uses MEM0_API_KEY from .env
-import os
 mem0 = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
 
 def add_memory():

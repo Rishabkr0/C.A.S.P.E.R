@@ -90,13 +90,12 @@ class ChromeMCPServer:
     # ------------------------------------------------------------------ #
     def _get_best_profile_path(self) -> str:
         """
-        Get the best Chrome profile path:
-        Using a temporary profile to avoid locking issues with the user's main Chrome instance.
+        Get the Chrome profile path:
+        Using a dedicated Casper profile to avoid locking issues with the user's main Chrome instance.
         """
-        # Fallback to temporary profile in USER_DATA_PATH to avoid permissions issues
-        temp_profile = os.path.join(USER_DATA_PATH, "chrome_profile")
-        logger.info(f"Using temporary Chrome profile at: {temp_profile}")
-        return temp_profile
+        casper_profile = os.path.join(USER_DATA_PATH, "casper_chrome_profile")
+        logger.info(f"Using dedicated Casper Chrome profile at: {casper_profile}")
+        return casper_profile
 
     def _find_chrome_path(self) -> str:
         """Auto-detect Chrome installation path"""
@@ -190,7 +189,7 @@ class ChromeMCPServer:
             if "User Data" in self.user_data_dir:
                 logger.info("✓ Using your real Chrome profile with all bookmarks, logins, and extensions")
             else:
-                logger.info("⚠ Using temporary profile (your main Chrome may be open). Close Chrome and restart casper to use your real profile.")
+                logger.info("✓ Using dedicated Casper Chrome profile. Log in to your accounts here and they will be remembered.")
 
         except Exception as e:
             logger.error(f"Failed to launch Chrome: {e}")
@@ -201,15 +200,15 @@ class ChromeMCPServer:
                 self.chrome_process.terminate()
                 self.chrome_process = None
 
-            # If we tried to use real profile and it failed, retry with temp profile
+            # If we tried to use real profile and it failed, retry with Casper profile
             if "User Data" in self.user_data_dir:
-                logger.warning("Real Chrome profile is locked. Falling back to temporary profile...")
-                self.user_data_dir = os.path.join(USER_DATA_PATH, "chrome_profile")
+                logger.warning("Real Chrome profile is locked. Falling back to dedicated Casper profile...")
+                self.user_data_dir = os.path.join(USER_DATA_PATH, "casper_chrome_profile")
                 os.makedirs(self.user_data_dir, exist_ok=True)
 
-                # Retry with temp profile
+                # Retry with Casper profile
                 chrome_args[2] = f"--user-data-dir={self.user_data_dir}"
-                # Remove profile-directory for temp profile to avoid creating unnecessary folders
+                # Remove profile-directory for Casper profile to avoid creating unnecessary folders
                 chrome_args = [arg for arg in chrome_args if not arg.startswith("--profile-directory")]
                 
                 try:
@@ -223,10 +222,9 @@ class ChromeMCPServer:
                     ok = await self._wait_for_debug_port(timeout=15)
                     if not ok:
                         raise RuntimeError(f"Chrome did not open debug port {self.remote_debugging_port} in time")
-                    logger.info("Chrome launched with temporary profile (no bookmarks/logins)")
-                    logger.info("💡 Tip: Close all Chrome windows and restart casper to use your real profile")
+                    logger.info("Chrome launched with dedicated Casper profile")
                 except Exception as retry_error:
-                    logger.error(f"Failed to launch Chrome even with temp profile: {retry_error}")
+                    logger.error(f"Failed to launch Chrome even with Casper profile: {retry_error}")
                     raise
             else:
                 raise
@@ -319,6 +317,25 @@ class ChromeMCPServer:
         except Exception:
             return url
 
+    async def _ensure_dom_agent(self) -> bool:
+        """Inject the Casper DOM Agent and Ghost Cursor engine if not present."""
+        try:
+            is_injected = await self._evaluate("Boolean(window.__casperAgent)")
+            if not is_injected:
+                agent_path = os.path.join(os.path.dirname(__file__), "casper_dom_agent.js")
+                if os.path.exists(agent_path):
+                    with open(agent_path, "r", encoding="utf-8") as f:
+                        js_code = f.read()
+                    await self._evaluate(js_code)
+                    logger.info("Injected Casper DOM Agent & Ghost Cursor into current page")
+                else:
+                    logger.warning(f"casper_dom_agent.js not found at {agent_path}")
+                    return False
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to ensure DOM agent: {e}")
+            return False
+
     # ---------------- Public API ---------------- #
     async def connect(self):
         """Connect to Chrome (launch if needed)"""
@@ -359,6 +376,11 @@ class ChromeMCPServer:
             ("get_cookies", "Get browser cookies"),
             ("clear_cookies", "Clear browser cookies"),
             ("set_blocked_urls", "Block network requests to specific URLs"),
+            ("scan_page", "Scan visible interactive elements with Casper Set-of-Marks badges"),
+            ("click_id", "Click interactive element using numeric ID with Casper Ghost Cursor"),
+            ("type_id", "Type text into element using numeric ID with Casper Ghost Cursor"),
+            ("move_cursor", "Move Casper Ghost Cursor to (x, y) coordinates"),
+            ("clear_overlays", "Clear Casper badges and cursor overlay"),
         ]
         tools = [_t(n, d) for n, d in names_descs]
         if self.cache_tools_list:
@@ -540,12 +562,26 @@ class ChromeMCPServer:
 
         if name in ("click", "click_element"):
             selector = args.get("selector") or args.get("css") or ""
-            if not selector:
-                raise ValueError("click requires 'selector'")
+            if not selector and args.get("id") is None and args.get("element_id") is None:
+                raise ValueError("click requires 'selector' or 'id'")
+            # Route numeric selectors or id args to click_id
+            if args.get("id") is not None or args.get("element_id") is not None:
+                return await self._dispatch("click_id", args)
+            if isinstance(selector, int) or (isinstance(selector, str) and selector.strip().isdigit()):
+                return await self._dispatch("click_id", {"id": int(selector)})
+
+            await self._ensure_dom_agent()
             js = f"""(() => {{
                 const el = document.querySelector({json.dumps(selector)});
                 if (!el) return 'not found: {selector}';
-                el.scrollIntoView({{block:'center', behavior:'instant'}});
+                el.scrollIntoView({{block:'center', behavior:'smooth'}});
+                if (window.__casperAgent) {{
+                    const rect = el.getBoundingClientRect();
+                    const x = Math.round(rect.left + rect.width / 2);
+                    const y = Math.round(rect.top + rect.height / 2);
+                    window.__casperAgent.moveCursorTo(x, y, 'Clicking...');
+                    window.__casperAgent.playClickEffect(x, y);
+                }}
                 el.focus();
                 el.click();
                 // also dispatch mouse events for frameworks
@@ -553,8 +589,114 @@ class ChromeMCPServer:
                 el.dispatchEvent(new MouseEvent('mouseup', {{bubbles:true}}));
                 return 'clicked: {selector}';
             }})()"""
-            val = await self._evaluate(js)
+            val = await self._evaluate(js, awaitPromise=True)
             return str(val)
+
+        # ============================================
+        # CASPER DOM AGENT & GHOST CURSOR
+        # ============================================
+        if name in ("scan_dom", "scan_page", "get_interactive_elements"):
+            show_badges = bool(args.get("show_badges", False))
+            max_elements = int(args.get("max_elements", 75))
+            await self._ensure_dom_agent()
+            js = f"""(async () => {{
+                if (!window.__casperAgent) return [];
+                return window.__casperAgent.scanInteractiveElements({{
+                    showBadges: {json.dumps(show_badges)},
+                    maxElements: {max_elements}
+                }});
+            }})()"""
+            elements = await self._evaluate(js, awaitPromise=True)
+            if not elements or not isinstance(elements, list):
+                return "No interactive elements detected on the current page."
+
+            lines = [f"Found {len(elements)} interactive elements on page:"]
+            for el in elements:
+                lines.append(f"[{el['id']}] {el.get('role', 'element')}: \"{el.get('label', '')}\" (x={el.get('x')}, y={el.get('y')})")
+
+            summary = "\n".join(lines)
+            return {"content": [summary], "elements": elements}
+
+        if name in ("click_id", "click_element_by_id", "dom_click"):
+            el_id = args.get("id") or args.get("element_id")
+            if el_id is None:
+                raise ValueError("click_id requires 'id'")
+            await self._ensure_dom_agent()
+            js = f"""(async () => {{
+                if (!window.__casperAgent) return {{success: false, error: 'Casper DOM Agent not found'}};
+                return await window.__casperAgent.clickElementById({int(el_id)});
+            }})()"""
+            res = await self._evaluate(js, awaitPromise=True)
+            if isinstance(res, dict) and res.get("success"):
+                x = res.get("x")
+                y = res.get("y")
+                # Send CDP native mouse events for full browser fidelity
+                try:
+                    ws_url = await asyncio.to_thread(self._ensure_ws_url)
+                    await self._cdp(ws_url, "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+                    await self._cdp(ws_url, "Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+                    await self._cdp(ws_url, "Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+                except Exception as cdp_err:
+                    logger.debug(f"CDP native mouse event dispatch note: {cdp_err}")
+                return f"Successfully clicked element [{el_id}] '{res.get('label', '')}' at ({x}, {y})"
+            else:
+                err = res.get("error") if isinstance(res, dict) else str(res)
+                return f"Failed to click element [{el_id}]: {err}"
+
+        if name in ("type_id", "type_element_by_id", "dom_type"):
+            el_id = args.get("id") or args.get("element_id")
+            text = args.get("text") or args.get("value") or ""
+            press_enter = bool(args.get("press_enter", False))
+            if el_id is None:
+                raise ValueError("type_id requires 'id' and 'text'")
+            await self._ensure_dom_agent()
+            js = f"""(async () => {{
+                if (!window.__casperAgent) return {{success: false, error: 'Casper DOM Agent not found'}};
+                return await window.__casperAgent.typeElementById({int(el_id)}, {json.dumps(text)});
+            }})()"""
+            res = await self._evaluate(js, awaitPromise=True)
+            if isinstance(res, dict) and res.get("success"):
+                if press_enter:
+                    try:
+                        ws_url = await asyncio.to_thread(self._ensure_ws_url)
+                        await self._cdp(ws_url, "Input.dispatchKeyEvent", {
+                            "type": "keyDown",
+                            "windowsVirtualKeyCode": 13,
+                            "key": "Enter",
+                            "code": "Enter",
+                            "text": "\r"
+                        })
+                        await self._cdp(ws_url, "Input.dispatchKeyEvent", {
+                            "type": "keyUp",
+                            "windowsVirtualKeyCode": 13,
+                            "key": "Enter",
+                            "code": "Enter"
+                        })
+                    except Exception as k_err:
+                        logger.debug(f"CDP Enter key event dispatch note: {k_err}")
+                return f"Successfully typed '{text}' into element [{el_id}]{' and pressed Enter' if press_enter else ''}"
+            else:
+                err = res.get("error") if isinstance(res, dict) else str(res)
+                return f"Failed to type into element [{el_id}]: {err}"
+
+        if name in ("move_cursor", "cursor_move"):
+            x = int(args.get("x", 0))
+            y = int(args.get("y", 0))
+            label = args.get("label", "Casper")
+            await self._ensure_dom_agent()
+            js = f"""(async () => {{
+                if (window.__casperAgent) {{
+                    await window.__casperAgent.moveCursorTo({x}, {y}, {json.dumps(label)});
+                }}
+            }})()"""
+            await self._evaluate(js, awaitPromise=True)
+            return f"Moved Casper Ghost Cursor to ({x}, {y})"
+
+        if name in ("clear_overlays", "clear_badges", "hide_badges"):
+            await self._ensure_dom_agent()
+            js = "window.__casperAgent ? window.__casperAgent.clearBadges() : null"
+            await self._evaluate(js)
+            return "Cleared Casper overlays and badges"
 
         if name in ("type", "type_text", "input", "fill"):
             selector = args.get("selector") or args.get("css") or ""
@@ -722,4 +864,5 @@ async def create_chrome_server(
     )
     if auto_connect:
         await server.connect()
+    return server
     return server

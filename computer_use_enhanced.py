@@ -114,6 +114,15 @@ async def handle_youtube_task(task: str) -> str:
                 speed = float(match.group())
                 return await chrome_tools.youtube_set_playback_speed(None, speed)
 
+        # Quality
+        if "quality" in task_lower or "resolution" in task_lower or "1080p" in task_lower or "720p" in task_lower or "480p" in task_lower or "1440p" in task_lower or "4k" in task_lower or "2160p" in task_lower or "360p" in task_lower or "240p" in task_lower or "144p" in task_lower:
+            match = re.search(r'(144p|240p|360p|480p|720p|1080p|1440p|2160p|4k|auto)', task_lower)
+            if match:
+                quality = match.group(1)
+                if quality == '4k': quality = '2160p'
+                return await chrome_tools.youtube_set_quality(None, quality)
+
+
         # Playback control - check for pause/play BEFORE searching
         if task_lower in ["pause", "pause video", "pause the video", "pause this", "pause it"]:
             return await chrome_tools.youtube_control_playback(None, "pause")
@@ -164,6 +173,19 @@ async def handle_youtube_task(task: str) -> str:
 
         # Play video (auto-play first result) - only if contains "play"
         if "play" in task_lower:
+            ordinal_map = {
+                "first": 1, "1st": 1,
+                "second": 2, "2nd": 2,
+                "third": 3, "3rd": 3,
+                "fourth": 4, "4th": 4,
+                "fifth": 5, "5th": 5,
+                "sixth": 6, "6th": 6
+            }
+            
+            for word, index in ordinal_map.items():
+                if f"{word} video" in task_lower or f"the {word} video" in task_lower or task_lower.strip() in [f"play {word}", f"play the {word}"]:
+                    return await chrome_tools.youtube_play_nth_video(None, index)
+                
             # Extract query
             query = task_lower.replace("play", "")
             query = query.replace("on youtube", "").replace("youtube", "").strip()
@@ -411,6 +433,17 @@ async def computer_use_loop(task: str, max_steps: int = 15) -> str:
 
         except Exception as e:
             logger.warning(f"Chrome automation failed: {e}, falling back to original")
+
+    # Check if this is an IDE / Code inspection or fixing task
+    ide_keywords = ["vscode", "vs code", "code", "ide", "editor", "bug", "syntax", "error on line", "fix the code", "fix bug", "line number", "antigravity"]
+    action_keywords = ["fix", "bug", "error", "inspect", "check", "edit", "correct", "line", "what's wrong", "why is this"]
+    if any(k in task_lower for k in ide_keywords) and any(k in task_lower for k in action_keywords):
+        try:
+            import ide_control
+            logger.info(f"Routing code inspection/fix task to IDE control: {task}")
+            return await ide_control.inspect_and_fix_code(task)
+        except Exception as e:
+            logger.warning(f"IDE control routing failed ({e}), falling back...")
 
     # Fall back to original computer use loop
     logger.info(f"Using original automation for: {task}")

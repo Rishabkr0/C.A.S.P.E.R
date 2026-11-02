@@ -64,11 +64,29 @@ Casper doesn't hide in a terminal. It features a frameless, transparent PySide6 
 
 ---
 
+## 📚 Documentation & Guides
+
+Comprehensive guides and architectural references are located in the [`docs/`](docs/) directory:
+* [Quickstart Guide](docs/QUICKSTART.md) — Fast 5-minute setup
+* [Start Here Guide](docs/START_HERE.md) — Feature overview & first steps
+* [Chrome MCP Setup](docs/CHROME_MCP_SETUP.md) — Detailed browser automation configuration
+* [YouTube Controls](docs/YOUTUBE_COMPLETE_CONTROLS.md) — Complete voice command list for YouTube
+* [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md) — Full technical summary of integrations
+
+---
+
 ## 🧪 Testing
 
-To verify that Casper's advanced Chrome integration and Node.js environment are set up correctly, run the test suite:
+To verify that Casper's integrations and background worker are functioning correctly, run the test suite:
 ```bash
-python test_chrome_integration.py
+# Test Chrome MCP integration
+python tests/test_chrome_integration.py
+
+# Test Background Worker Agent
+python tests/test_worker.py
+
+# Test Memory Client (Mem0)
+python tests/test_mem0.py
 ```
 
 ---

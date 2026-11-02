@@ -13,5 +13,8 @@ contextBridge.exposeInMainWorld('api', {
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  onUIState: (callback) => ipcRenderer.on('ui-state', (event, state) => callback(state))
+  onUIState: (callback) => ipcRenderer.on('ui-state', (event, state) => callback(state)),
+  onCursorPos: (callback) => ipcRenderer.on('cursor-trail-pos', (event, pt) => callback(pt)),
+  sendUICommand: (cmd) => ipcRenderer.invoke('ui-command', cmd),
+  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options)
 });

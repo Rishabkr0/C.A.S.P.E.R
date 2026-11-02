@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>casper Studio // Editorial</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>casper Studio // Enterprise</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -15,13 +15,11 @@
                         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
                     },
                     colors: {
-                        base: '#1a1a18',
-                        surface: '#242422',
-                        surfaceHover: '#2a2a28',
-                        border: '#3f3f3c',
-                        textPrimary: '#e4e4e1',
-                        textSecondary: '#a1a19a',
-                        accent: '#d4d4d0',
+                        base: '#09090b',
+                        surface: '#18181b',
+                        border: '#27272a',
+                        textPrimary: '#fafafa',
+                        textSecondary: '#a1a1aa',
                     }
                 }
             }
@@ -29,228 +27,289 @@
     </script>
     <style>
         body {
-            background-color: #1a1a18;
-            color: #e4e4e1;
+            background-color: #09090b;
+            /* Premium Dot Matrix Background */
+            background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+            background-size: 24px 24px;
+            color: #fafafa;
             font-family: 'Inter', sans-serif;
-            overflow: hidden;
+            overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
         }
 
-        /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #3f3f3c; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #52524f; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 
-        /* Pages */
-        .page { display: none; opacity: 0; }
-        .page.active { display: block; opacity: 1; animation: fadeIn 0.3s ease forwards; }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        /* Staggered Entrance Animations */
+        .animate-up {
+            opacity: 0;
+            transform: translateY(10px);
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .delay-1 { animation-delay: 0.05s; }
+        .delay-2 { animation-delay: 0.1s; }
+        .delay-3 { animation-delay: 0.15s; }
+
+        @keyframes slideUp {
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Matte Card */
-        .matte-card {
-            background: #242422;
-            border: 1px solid #3f3f3c;
-            border-radius: 12px;
-            transition: border-color 0.2s ease, background-color 0.2s ease;
-        }
-        .matte-card:hover {
-            background: #2a2a28;
-            border-color: #52524f;
-        }
-
-        /* Inputs */
-        .flat-input {
-            background: #1a1a18;
-            border: 1px solid #3f3f3c;
-            color: #e4e4e1;
+        /* Premium Card Hover Effects */
+        .pro-card {
+            background: #18181b;
+            border: 1px solid #27272a;
             border-radius: 8px;
-            padding: 0.75rem 1rem;
-            font-size: 0.95rem;
-            transition: border-color 0.2s ease;
-            width: 100%;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .flat-input:focus {
-            outline: none;
-            border-color: #a1a19a;
+        .pro-card:hover {
+            border-color: #3f3f46;
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -10px rgba(0,0,0,0.5);
         }
         
-        select.flat-input {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a19a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 1rem center;
+        /* Modern Inputs */
+        .pro-input {
+            background: rgba(9, 9, 11, 0.5);
+            border: 1px solid #27272a;
+            color: #fafafa;
+            border-radius: 6px;
+            padding: 0.6rem 0.85rem;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+            width: 100%;
         }
-        select.flat-input option { background: #242422; }
+        .pro-input:focus {
+            outline: none;
+            border-color: #71717a;
+            background: rgba(9, 9, 11, 0.8);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+        }
+        
+        select.pro-input {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.85rem center;
+        }
+        select.pro-input option {
+            background: #18181b;
+            color: #fafafa;
+        }
+
+        /* Glowing Button Wrapper */
+        .btn-glow {
+            position: relative;
+            display: inline-block;
+        }
+        .btn-glow::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 8px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #3b82f6);
+            filter: blur(10px);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            z-index: -1;
+        }
+        .btn-glow:hover::before {
+            opacity: 0.4;
+        }
 
         /* Primary Button */
-        .btn-primary {
-            background: #e4e4e1;
-            color: #1a1a18;
-            border: 1px solid transparent;
-            padding: 0.6rem 1.5rem;
+        .btn-pro {
+            background: #fafafa;
+            color: #09090b;
+            padding: 0.5rem 1.25rem;
             border-radius: 6px;
-            font-weight: 500;
-            font-size: 0.95rem;
+            font-weight: 600;
+            font-size: 0.875rem;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
+            box-shadow: 0 4px 12px rgba(255,255,255,0.1);
         }
-        .btn-primary:hover {
-            background: #ffffff;
+        .btn-pro:hover {
+            background: #e4e4e7;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(255,255,255,0.15);
         }
-        .btn-primary:active { transform: scale(0.98); }
+        .btn-pro:active { transform: scale(0.97); }
 
-        /* Sidebar Item */
-        .nav-item {
-            color: #a1a19a;
+        /* Secondary Button */
+        .btn-sec {
+            background: #18181b;
+            color: #fafafa;
+            border: 1px solid #27272a;
+            padding: 0.5rem 1.25rem;
             border-radius: 6px;
-            transition: all 0.2s ease;
+            font-weight: 500;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
         }
-        .nav-item:hover {
-            background: #2a2a28;
-            color: #e4e4e1;
-        }
-        .nav-item.active {
-            background: #242422;
-            color: #e4e4e1;
-            border: 1px solid #3f3f3c;
+        .btn-sec:hover {
+            background: #27272a;
+            border-color: #3f3f46;
         }
 
-        /* Status Dot */
+        /* Top Nav Items */
+        .nav-item {
+            color: #a1a1aa;
+            transition: all 0.2s ease;
+            font-weight: 500;
+            position: relative;
+        }
+        .nav-item:hover { color: #fafafa; }
+        .nav-item.active { color: #fafafa; }
+        .nav-item.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: #fafafa;
+            border-top-left-radius: 2px;
+            border-top-right-radius: 2px;
+            animation: expandWidth 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes expandWidth {
+            from { width: 0; left: 50%; }
+            to { width: 100%; left: 0; }
+        }
+
         .status-dot {
             display: inline-block; width: 8px; height: 8px; border-radius: 50%;
             margin-right: 8px;
+            box-shadow: 0 0 8px currentColor;
         }
         
-        /* Toast */
         .toast {
-            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(100px);
-            background: #e4e4e1; color: #1a1a18;
-            padding: 1rem 1.5rem; border-radius: 8px; font-weight: 500;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); opacity: 0;
-            transition: all 0.3s ease; z-index: 1000;
-            display: flex; align-items: center; gap: 12px;
+            position: fixed; bottom: 40px; right: 40px; transform: translateY(100px);
+            background: rgba(24, 24, 27, 0.8); backdrop-filter: blur(12px);
+            color: #fafafa; border: 1px solid #3f3f46;
+            padding: 0.85rem 1.25rem; border-radius: 8px; font-weight: 500; font-size: 0.875rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); opacity: 0;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); z-index: 1000;
+            display: flex; align-items: center; gap: 10px;
         }
-        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+
+        /* Premium Headers (Tighter tracking for modern look) */
+        h1, h2, h3 { letter-spacing: -0.02em; }
     </style>
 </head>
-<body class="flex h-screen w-full antialiased selection:bg-[#3f3f3c] selection:text-white">
+<body class="flex flex-col min-h-screen selection:bg-blue-500/30 selection:text-blue-200">
 
-    <!-- SIDEBAR -->
-    <nav class="w-[260px] h-full flex flex-col bg-[#1a1a18] border-r border-[#3f3f3c] shrink-0 py-8 px-4 z-10 relative">
-        <div class="flex items-center gap-3 px-3 mb-10">
-            <div class="w-10 h-10 bg-[#e4e4e1] text-[#1a1a18] rounded-md flex items-center justify-center font-sans font-bold text-xl">C</div>
-            <h1 class="text-2xl font-bold tracking-tight text-[#e4e4e1]">casper</h1>
-        </div>
-
-        <div class="flex flex-col gap-1">
-            <button onclick="switchTab('dashboard', this)" class="nav-item active flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
-                Dashboard
-            </button>
-            <button onclick="switchTab('settings', this)" class="nav-item flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                Configurations
-            </button>
-            <button onclick="switchTab('guide', this)" class="nav-item flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                Setup Guide
-            </button>
-            <button onclick="switchTab('about', this)" class="nav-item flex items-center gap-3 px-3 py-2.5 text-left w-full text-[0.95rem] font-medium border border-transparent">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                About
-            </button>
-        </div>
-    </nav>
-
-    <!-- MAIN CONTENT -->
-    <main class="flex-1 relative overflow-y-auto z-10 px-16 py-12">
-        
-        <!-- DASHBOARD -->
-        <div id="dashboard" class="page active max-w-5xl mx-auto">
-            <div class="mb-14">
-                <h2 id="greetingText" class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">Welcome back.</h2>
-                <p class="text-[#a1a19a] text-[1.05rem]">System is online and secure. Awaiting commands.</p>
+    <!-- TOP NAVIGATION -->
+    <header class="border-b border-[#27272a] bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+            <!-- Brand -->
+            <div class="flex items-center gap-3">
+                <img src="../newLOGO_light.png" onerror="this.src='../newLOGO.png'" class="w-8 h-8 object-contain rounded-md" alt="Casper Logo">
+                <h1 class="text-lg font-semibold text-white">casper</h1>
+                <span class="px-2 py-0.5 rounded-full bg-[#27272a] text-[#a1a1aa] text-[0.65rem] font-mono tracking-wider ml-2 uppercase hidden sm:block">Enterprise</span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <!-- Nav Links -->
+            <nav class="flex items-center gap-8 h-full">
+                <button class="nav-item active h-full flex items-center text-sm" onclick="switchTab('dashboard', this)">Overview</button>
+                <button class="nav-item h-full flex items-center text-sm" onclick="switchTab('settings', this)">Settings</button>
+                <button class="nav-item h-full flex items-center text-sm" onclick="switchTab('guide', this)">Docs</button>
+                <button class="nav-item h-full flex items-center text-sm" onclick="switchTab('about', this)">About</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 w-full max-w-5xl mx-auto px-6 py-10 relative">
+        
+        <!-- DASHBOARD -->
+        <div id="dashboard" class="page active">
+            <!-- Control Header -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-10 pb-8 border-b border-[#27272a] animate-up">
+                <div>
+                    <h2 id="greetingText" class="text-3xl font-semibold text-white mb-2">Welcome back.</h2>
+                    <p class="text-[0.95rem] text-[#a1a1aa]">Manage your neural engine lifecycle and sub-processes.</p>
+                </div>
+                
+                <div class="btn-glow shrink-0">
+                    <button class="btn-pro px-6 py-3 w-full sm:w-auto" id="launchCard" onclick="validateAndLaunchCasper()">
+                        <span id="launchText" class="flex items-center justify-center gap-2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            Initialize System
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <!-- Status -->
-                <div class="matte-card p-6">
-                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Core Engine</h3>
-                    <div class="text-xl font-mono font-medium text-[#e4e4e1] flex items-center" id="engineStatusText">
-                        <span class="status-dot bg-[#e87c7c]"></span> Offline
+                <div class="pro-card p-6 flex flex-col justify-between min-h-[140px] animate-up delay-1">
+                    <h3 class="text-sm font-medium text-[#71717a] mb-4">Core Engine</h3>
+                    <div class="text-2xl font-mono text-white flex items-center text-red-500" id="engineStatusText">
+                        <span class="status-dot"></span> <span class="text-white ml-2">Offline</span>
                     </div>
                 </div>
                 
                 <!-- Model -->
-                <div class="matte-card p-6">
-                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Neural Model</h3>
-                    <div class="text-xl font-mono font-medium text-[#e4e4e1]">Gemini 3.1 Flash</div>
+                <div class="pro-card p-6 flex flex-col justify-between min-h-[140px] animate-up delay-2">
+                    <h3 class="text-sm font-medium text-[#71717a] mb-4">Neural Model</h3>
+                    <div class="text-2xl font-mono text-white">Gemini 3.1</div>
                 </div>
 
                 <!-- Memory -->
-                <div class="matte-card p-6">
-                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Memory Context</h3>
-                    <div class="text-xl font-mono font-medium text-[#e4e4e1]">Mem0 Isolated</div>
+                <div class="pro-card p-6 flex flex-col justify-between min-h-[140px] animate-up delay-3">
+                    <h3 class="text-sm font-medium text-[#71717a] mb-4">Memory Context</h3>
+                    <div class="text-2xl font-mono text-white">Mem0 Sync</div>
                 </div>
+            </div>
 
-                <!-- Launch Button Card -->
-                <div class="matte-card p-6 col-span-1 md:col-span-2 flex flex-col justify-center items-center text-center cursor-pointer group" id="launchCard" style="border-color: #3f3f3c; background: #242422; transition: all 0.2s;" onclick="validateAndLaunchCasper()">
-                    <!-- We use CSS class overrides. Adding group-hover on the parent to target the text. -->
-                    <style>
-                        #launchCard:hover { background: #e4e4e1 !important; border-color: #e4e4e1 !important; }
-                        #launchCard:hover #launchText { color: #1a1a18 !important; }
-                    </style>
-                    <div class="text-[1.7rem] font-bold tracking-tight flex items-center gap-3 transition-colors duration-200" id="launchText" style="color: #e4e4e1;">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                        Launch casper
-                    </div>
+            <!-- Updates -->
+            <div class="mt-6 pro-card p-6 animate-up delay-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-medium text-[#71717a]">System Updates</h3>
+                    <button class="text-xs font-medium text-[#a1a1aa] hover:text-white transition-colors" onclick="manualCheckForUpdates()" id="manualUpdateBtn">Check for Updates</button>
                 </div>
-
-                <!-- Updates -->
-                <div class="matte-card p-6">
-                    <h3 class="text-xs uppercase tracking-widest text-[#a1a19a] font-semibold mb-3">Updates</h3>
-                    <div class="text-[0.95rem] text-[#e4e4e1]" id="updateStatusText">Checking for updates...</div>
-                    <div id="updateProgressContainer" class="w-full h-1 bg-[#3f3f3c] rounded-full mt-3 overflow-hidden hidden">
-                        <div id="updateProgressBar" class="h-full bg-[#e4e4e1] transition-all duration-300" style="width: 0%;"></div>
-                    </div>
+                <div class="text-[0.95rem] text-[#a1a1aa]" id="updateStatusText">Ready</div>
+                <div id="updateProgressContainer" class="w-full h-1.5 bg-[#27272a] rounded-full mt-4 overflow-hidden hidden">
+                    <div id="updateProgressBar" class="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300" style="width: 0%;"></div>
                 </div>
             </div>
         </div>
 
         <!-- CONFIGURATIONS -->
-        <div id="settings" class="page max-w-3xl mx-auto">
-            <div class="mb-14">
-                <h2 class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">Configurations</h2>
-                <p class="text-[#a1a19a] text-[1.05rem]">Manage system identity, API keys, and connection protocols.</p>
+        <div id="settings" class="page">
+            <div class="mb-10 pb-8 border-b border-[#27272a] animate-up">
+                <h2 class="text-3xl font-semibold text-white mb-2">Configurations</h2>
+                <p class="text-[0.95rem] text-[#a1a1aa]">Manage system identity, API keys, and connection protocols.</p>
             </div>
 
-            <form id="configForm" class="space-y-10 pb-20">
+            <form id="configForm" class="space-y-8 pb-20">
                 
                 <!-- Group 1 -->
-                <div>
-                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c]">User Identity</h3>
+                <div class="pro-card p-6 sm:p-8 animate-up delay-1">
+                    <h3 class="text-sm font-semibold text-white mb-6">User Identity</h3>
                     
-                    <div class="space-y-5">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Alias / Name</label>
-                            <input type="text" id="Casper_USER_ID" name="Casper_USER_ID" class="flat-input" placeholder="e.g. Tony Stark">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">Alias / Name</label>
+                            <input type="text" id="Casper_USER_ID" name="Casper_USER_ID" class="pro-input" placeholder="e.g. Tony Stark">
                         </div>
 
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Personal Background & Context</label>
-                            <textarea id="USER_PERSONAL_INFO" name="USER_PERSONAL_INFO" class="flat-input h-24" placeholder="I am a software engineer building AI..."></textarea>
-                        </div>
-
-                        <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Voice Persona</label>
-                            <select id="CASPER_VOICE" name="CASPER_VOICE" class="flat-input" onchange="updateVoiceTag(this)">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">Voice Persona</label>
+                            <select id="CASPER_VOICE" name="CASPER_VOICE" class="pro-input" onchange="updateVoiceTag(this)">
                                 <option value="Charon">Charon — Calm & Professional Male</option>
                                 <option value="Fenrir">Fenrir — Energetic & Dynamic Male</option>
                                 <option value="Puck">Puck — Upbeat & Playful Male</option>
@@ -262,67 +321,72 @@
                                 <option value="Leda">Leda — Warm & Youthful Female</option>
                             </select>
                         </div>
+                        
+                        <div class="flex flex-col md:col-span-2">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">Personal Background & Context</label>
+                            <textarea id="USER_PERSONAL_INFO" name="USER_PERSONAL_INFO" class="pro-input h-24 resize-none" placeholder="I am a software engineer building AI..."></textarea>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Group 2 -->
-                <div>
-                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c]">Authentication Keys</h3>
+                <div class="pro-card p-6 sm:p-8 animate-up delay-2">
+                    <h3 class="text-sm font-semibold text-white mb-6">Authentication Keys</h3>
                     
-                    <div class="space-y-5">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Google Gemini API Key</label>
-                            <input type="password" id="GEMINI_API_KEY" name="GEMINI_API_KEY" class="flat-input font-mono">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2 flex items-center gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg> Google Gemini API Key</label>
+                            <input type="password" id="GEMINI_API_KEY" name="GEMINI_API_KEY" class="pro-input font-mono">
                         </div>
 
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Mem0 API Key</label>
-                            <input type="password" id="MEM0_API_KEY" name="MEM0_API_KEY" class="flat-input font-mono">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2 flex items-center gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg> Mem0 API Key</label>
+                            <input type="password" id="MEM0_API_KEY" name="MEM0_API_KEY" class="pro-input font-mono">
                         </div>
                     </div>
                 </div>
 
                 <!-- Group 3 -->
-                <div>
-                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c] flex justify-between">
-                        <span>LiveKit Telemetry</span>
-                        <a href="https://cloud.livekit.io/" target="_blank" class="text-[#e4e4e1] hover:underline">Get Keys</a>
-                    </h3>
+                <div class="pro-card p-6 sm:p-8 animate-up delay-3">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-sm font-semibold text-white">LiveKit Telemetry</h3>
+                        <a href="https://cloud.livekit.io/" target="_blank" class="text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">Get Keys <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                    </div>
                     
-                    <div class="space-y-5">
-                        <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Server WSS URL</label>
-                            <input type="text" id="LIVEKIT_URL" name="LIVEKIT_URL" class="flat-input font-mono" placeholder="wss://your-project.livekit.cloud">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="flex flex-col md:col-span-2">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">Server WSS URL</label>
+                            <input type="text" id="LIVEKIT_URL" name="LIVEKIT_URL" class="pro-input font-mono" placeholder="wss://your-project.livekit.cloud">
                         </div>
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">API Key</label>
-                            <input type="password" id="LIVEKIT_API_KEY" name="LIVEKIT_API_KEY" class="flat-input font-mono">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">API Key</label>
+                            <input type="password" id="LIVEKIT_API_KEY" name="LIVEKIT_API_KEY" class="pro-input font-mono">
                         </div>
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">API Secret</label>
-                            <input type="password" id="LIVEKIT_API_SECRET" name="LIVEKIT_API_SECRET" class="flat-input font-mono">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">API Secret</label>
+                            <input type="password" id="LIVEKIT_API_SECRET" name="LIVEKIT_API_SECRET" class="pro-input font-mono">
                         </div>
                     </div>
                 </div>
 
                 <!-- Group 4 -->
-                <div>
-                    <h3 class="text-sm uppercase tracking-widest text-[#a1a19a] font-semibold mb-4 pb-2 border-b border-[#3f3f3c]">Communications Protocol</h3>
+                <div class="pro-card p-6 sm:p-8 animate-up delay-3">
+                    <h3 class="text-sm font-semibold text-white mb-6">Communications Protocol</h3>
                     
-                    <div class="space-y-5">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">SMTP Gmail Address</label>
-                            <input type="text" id="GMAIL_USER" name="GMAIL_USER" class="flat-input" placeholder="user@gmail.com">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">SMTP Gmail Address</label>
+                            <input type="text" id="GMAIL_USER" name="GMAIL_USER" class="pro-input" placeholder="user@gmail.com">
                         </div>
                         <div class="flex flex-col">
-                            <label class="text-[#e4e4e1] font-medium text-[0.95rem] mb-1">Google App Password</label>
-                            <input type="password" id="GMAIL_APP_PASSWORD" name="GMAIL_APP_PASSWORD" class="flat-input font-mono">
+                            <label class="text-[#a1a1aa] font-medium text-sm mb-2">Google App Password</label>
+                            <input type="password" id="GMAIL_APP_PASSWORD" name="GMAIL_APP_PASSWORD" class="pro-input font-mono">
                         </div>
                     </div>
                 </div>
 
-                <div class="flex justify-end pt-6">
-                    <button type="submit" class="btn-primary" id="saveBtn">
+                <div class="flex justify-end pt-4 border-t border-[#27272a]">
+                    <button type="submit" class="btn-pro" id="saveBtn">
                         Save Configuration
                     </button>
                 </div>
@@ -330,98 +394,104 @@
         </div>
 
         <!-- SETUP GUIDE -->
-        <div id="guide" class="page max-w-3xl mx-auto">
-            <div class="mb-14">
-                <h2 class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">Setup Guide</h2>
-                <p class="text-[#a1a19a] text-[1.05rem]">Documentation for acquiring necessary credentials.</p>
+        <div id="guide" class="page">
+            <div class="mb-10 pb-8 border-b border-[#27272a] animate-up">
+                <h2 class="text-3xl font-semibold text-white mb-2">Setup Guide</h2>
+                <p class="text-[0.95rem] text-[#a1a1aa]">Documentation for acquiring necessary credentials.</p>
             </div>
             
-            <div class="space-y-8 text-[0.95rem] text-[#e4e4e1] leading-relaxed">
-                <div>
-                    <h3 class="font-semibold mb-2">1. Google Gemini API</h3>
-                    <p class="mb-2 text-[#a1a19a]">The core neural engine driving casper's reasoning.</p>
-                    <ul class="list-disc pl-5 space-y-1">
-                        <li>Visit <a href="https://aistudio.google.com/app/apikey" target="_blank" class="underline">Google AI Studio</a>.</li>
-                        <li>Click <strong>Create API key</strong> and paste it into the Configurations tab.</li>
+            <div class="space-y-8 text-[0.95rem] text-[#d4d4d8] leading-relaxed">
+                <div class="pro-card p-6 sm:p-8 animate-up delay-1">
+                    <h3 class="font-medium text-white mb-2 text-lg">1. Google Gemini API</h3>
+                    <p class="mb-4 text-[#a1a1aa]">The core neural engine driving casper's reasoning.</p>
+                    <ul class="list-decimal pl-5 space-y-2 marker:text-[#71717a]">
+                        <li>Visit the <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-400 hover:text-blue-300">Google AI Studio</a>.</li>
+                        <li>Click <strong>Create API key</strong>.</li>
+                        <li>Paste it into the Configurations tab.</li>
                     </ul>
                 </div>
 
-                <div>
-                    <h3 class="font-semibold mb-2">2. LiveKit Cloud</h3>
-                    <p class="mb-2 text-[#a1a19a]">Powers the low-latency voice architecture.</p>
-                    <ul class="list-disc pl-5 space-y-1">
-                        <li>Sign up at <a href="https://cloud.livekit.io/" target="_blank" class="underline">LiveKit Cloud</a>.</li>
+                <div class="pro-card p-6 sm:p-8 animate-up delay-2">
+                    <h3 class="font-medium text-white mb-2 text-lg">2. LiveKit Cloud</h3>
+                    <p class="mb-4 text-[#a1a1aa]">Powers the low-latency voice architecture.</p>
+                    <ul class="list-decimal pl-5 space-y-2 marker:text-[#71717a]">
+                        <li>Sign up at <a href="https://cloud.livekit.io/" target="_blank" class="text-blue-400 hover:text-blue-300">LiveKit Cloud</a>.</li>
                         <li>Create a project and navigate to <strong>Settings > Keys</strong>.</li>
                         <li>Add a new key and copy the URL, API Key, and API Secret.</li>
                     </ul>
                 </div>
 
-                <div>
-                    <h3 class="font-semibold mb-2">3. Mem0 Platform</h3>
-                    <p class="mb-2 text-[#a1a19a]">Provides persistent long-term memory across sessions.</p>
-                    <ul class="list-disc pl-5 space-y-1">
-                        <li>Sign in to the <a href="https://app.mem0.ai/" target="_blank" class="underline">Mem0 Platform</a>.</li>
+                <div class="pro-card p-6 sm:p-8 animate-up delay-3">
+                    <h3 class="font-medium text-white mb-2 text-lg">3. Mem0 Platform</h3>
+                    <p class="mb-4 text-[#a1a1aa]">Provides persistent long-term memory across sessions.</p>
+                    <ul class="list-decimal pl-5 space-y-2 marker:text-[#71717a]">
+                        <li>Sign in to the <a href="https://app.mem0.ai/" target="_blank" class="text-blue-400 hover:text-blue-300">Mem0 Platform</a>.</li>
                         <li>Generate a new API key from your dashboard.</li>
                     </ul>
                 </div>
                 
-                <div>
-                    <h3 class="font-semibold mb-2">4. Gmail App Passwords</h3>
-                    <p class="mb-2 text-[#a1a19a]">Allows casper to send and receive emails on your behalf.</p>
-                    <ul class="list-disc pl-5 space-y-1">
+                <div class="pro-card p-6 sm:p-8 animate-up delay-3">
+                    <h3 class="font-medium text-white mb-2 text-lg">4. Gmail App Passwords</h3>
+                    <p class="mb-4 text-[#a1a1aa]">Allows casper to send and receive emails on your behalf.</p>
+                    <ul class="list-decimal pl-5 space-y-2 marker:text-[#71717a]">
                         <li>Go to your Google Account Security settings.</li>
-                        <li>Ensure 2-Step Verification is on, then create an <strong>App Password</strong>.</li>
+                        <li>Ensure 2-Step Verification is on.</li>
+                        <li>Create an <strong>App Password</strong>.</li>
                     </ul>
                 </div>
             </div>
         </div>
 
         <!-- ABOUT PAGE -->
-        <div id="about" class="page max-w-3xl mx-auto">
-            <div class="mb-14">
-                <h2 class="text-4xl font-bold tracking-tight text-[#e4e4e1] mb-2">About casper</h2>
-                <p class="text-[#a1a19a] text-[1.05rem]">System information and updates.</p>
+        <div id="about" class="page">
+            <div class="mb-10 pb-8 border-b border-[#27272a] animate-up">
+                <h2 class="text-3xl font-semibold text-white mb-2">About</h2>
+                <p class="text-[0.95rem] text-[#a1a1aa]">System information and ownership.</p>
             </div>
             
-            <div class="mb-10 p-8 border border-[#3f3f3c] rounded-xl bg-[#242422]">
-                <div class="flex items-center gap-6">
-                    <div class="w-20 h-20 bg-[#1a1a18] rounded-full border border-[#3f3f3c] flex items-center justify-center text-3xl font-bold text-[#e4e4e1]">R</div>
+            <div class="mb-6 p-8 pro-card animate-up delay-1">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-8">
+                    <img src="../newLOGO_light.png" onerror="this.src='../newLOGO.png'" class="w-32 h-32 object-contain rounded-2xl bg-white/5 p-4 border border-white/10" alt="Casper Logo">
                     <div>
-                        <h3 class="text-3xl font-bold tracking-tight text-[#e4e4e1] mb-1">casper</h3>
-                        <p class="text-[#a1a19a] mb-3">Built by <strong>Rishabkr0</strong></p>
-                        <div class="flex gap-4">
-                            <a href="https://github.com/Rishabkr0" target="_blank" class="text-[0.9rem] hover:underline">GitHub</a>
-                            <a href="https://www.instagram.com/rishabk.r/" target="_blank" class="text-[0.9rem] hover:underline">Instagram</a>
+                        <h3 class="text-3xl font-bold tracking-tight text-white mb-2">casper</h3>
+                        <p class="text-[#a1a1aa] mb-5 text-[0.95rem]">Engineered by <strong class="text-white">Rishabkr0</strong></p>
+                        <div class="flex gap-4 text-[0.95rem]">
+                            <a href="https://github.com/Rishabkr0" target="_blank" class="btn-sec flex items-center gap-2">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                                GitHub
+                            </a>
+                            <a href="https://www.instagram.com/rishabk.r/" target="_blank" class="btn-sec flex items-center gap-2">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+                                Instagram
+                            </a>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div>
-                <button class="btn-primary" onclick="manualCheckForUpdates()" id="manualUpdateBtn">
-                    Check for Updates
-                </button>
             </div>
         </div>
 
     </main>
 
     <!-- TOAST -->
-    <div class="toast" id="toast" style="display: flex; align-items: center; gap: 8px;">
-        <svg id="toastIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
-        <span id="toastMsg">Settings Saved Successfully</span>
+    <div class="toast" id="toast">
+        <svg id="toastIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+        <span id="toastMsg">Settings Saved</span>
     </div>
 
     <!-- ERROR MODAL -->
-    <div id="errorModal" class="fixed inset-0 bg-[#1a1a18]/90 z-[2000] hidden items-center justify-center p-4">
-        <div class="matte-card max-w-sm w-full p-8 text-center">
-            <h3 class="text-xl font-bold tracking-tight text-[#e4e4e1] mb-3">Incomplete Configuration</h3>
-            <p class="text-[#a1a19a] mb-6 text-[0.95rem]">casper requires active Neural Engine and Telemetry API keys to boot. Please fill out the core settings.</p>
-            <button class="w-full py-2 bg-[#e4e4e1] text-[#1a1a18] font-medium rounded-md" onclick="closeErrorModal()">Fix Configurations</button>
+    <div id="errorModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] hidden items-center justify-center p-4">
+        <div class="pro-card max-w-sm w-full p-6 text-center animate-up">
+            <div class="mx-auto w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mb-4 border border-red-500/20">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Incomplete Configuration</h3>
+            <p class="text-[#a1a1aa] mb-6 text-[0.95rem]">casper requires active Neural Engine and Telemetry API keys to boot.</p>
+            <button class="btn-pro w-full" onclick="closeErrorModal()">Fix Configurations</button>
         </div>
     </div>
 
-    <script>let isBooting = false;
+    <script>
+        let isBooting = false;
 
         function closeErrorModal() {
             document.getElementById('errorModal').style.display = 'none';
@@ -438,22 +508,21 @@
             }
         }
         
-        // Update handling
         if (window.api && window.api.onUpdateMessage) {
             window.api.onUpdateMessage((message) => {
                 const textEl = document.getElementById('updateStatusText');
                 textEl.innerText = message;
-                textEl.style.color = 'var(--text-primary)';
+                textEl.style.color = '#fafafa';
                 
                 let type = 'success';
                 if (message.includes('update available')) {
-                    textEl.style.color = '#ff9500';
+                    textEl.style.color = '#f59e0b';
                 }
                 if (message.includes('Up to date')) {
-                    textEl.style.color = '#34c759';
+                    textEl.style.color = '#a1a1aa';
                 }
                 if (message.toLowerCase().includes('error')) {
-                    textEl.style.color = '#ff3b30';
+                    textEl.style.color = '#ef4444';
                     type = 'error';
                 }
                 showToast(message, type);
@@ -475,21 +544,23 @@
 
                 if (isRunning) {
                     if (!btn.innerHTML.includes('Online')) {
-                        btn.innerHTML = `<span class="status-indicator" style="background:#32d74b;box-shadow:0 0 10px #32d74b;"></span> Online`;
-                        launchCard.style.borderColor = 'rgba(255, 59, 48, 0.4)';
-                        launchCard.style.background = 'rgba(255, 59, 48, 0.05)';
+                        btn.innerHTML = `<span class="status-dot text-green-500 bg-current"></span> <span class="text-white ml-2">Online</span>`;
+                        launchCard.style.background = '#ef4444'; 
+                        launchCard.style.color = '#ffffff';
+                        launchCard.style.boxShadow = '0 0 20px rgba(239,68,68,0.4)';
                         launchCard.onclick = stopCasperAction;
-                        launchText.style.color = '#ff3b30';
-                        launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg> Stop casper`;
+                        launchText.style.color = '#ffffff';
+                        launchText.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg> Stop System`;
                     }
                 } else {
                     if (!btn.innerHTML.includes('Offline')) {
-                        btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
-                        launchCard.style.borderColor = '#3f3f3c';
-                        launchCard.style.background = '#242422';
+                        btn.innerHTML = `<span class="status-dot text-red-500 bg-current"></span> <span class="text-white ml-2">Offline</span>`;
+                        launchCard.style.background = ''; 
+                        launchCard.style.color = '';
+                        launchCard.style.boxShadow = '';
                         launchCard.onclick = validateAndLaunchCasper;
                         launchText.style.color = '';
-                        launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Launch casper`;
+                        launchText.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Initialize System`;
                     }
                 }
             }
@@ -500,23 +571,26 @@
             if (window.api && window.api.readEnv) {
                 const config = await window.api.readEnv();
                 
-                // Essential keys required for casper to run
                 if (!config.GEMINI_API_KEY || !config.MEM0_API_KEY || !config.LIVEKIT_URL || !config.LIVEKIT_API_KEY || !config.LIVEKIT_API_SECRET) {
                     document.getElementById('errorModal').style.display = 'flex';
                     return;
                 }
 
-                // If valid, start casper
                 try {
                     isBooting = true;
                     const btn = document.getElementById('engineStatusText');
+                    const launchCard = document.getElementById('launchCard');
                     const launchText = document.getElementById('launchText');
-                    btn.innerHTML = `<span class="status-indicator" style="background:#ff9500;box-shadow:0 0 10px #ff9500;"></span> Booting Sequence...`;
-                    launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Booting...`;
+                    
+                    btn.innerHTML = `<span class="status-dot text-amber-500 bg-current"></span> <span class="text-white ml-2">Booting...</span>`;
+                    launchCard.style.background = '';
+                    launchCard.style.color = '';
+                    launchText.style.color = '';
+                    launchText.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> Booting System...`;
                     
                     const result = await window.api.startCasper();
                     if (result.status === 'success') {
-                        showToast('casper Initialization Sequence Engaged.', 'success');
+                        showToast('System Engaged', 'success');
                         setTimeout(() => {
                             isBooting = false;
                             updateCasperStatus();
@@ -524,16 +598,16 @@
                     } else {
                         isBooting = false;
                         showToast(result.message, 'error');
-                        btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
+                        btn.innerHTML = `<span class="status-dot text-red-500 bg-current"></span> <span class="text-white ml-2">Offline</span>`;
+                        launchText.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Initialize System`;
                     }
                 } catch (error) {
-                    showToast('System Error starting agent.', 'error');
+                    showToast('Error starting agent.', 'error');
                     isBooting = false;
                     const btn = document.getElementById('engineStatusText');
                     const launchText = document.getElementById('launchText');
-                    btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
-                    launchText.style.color = '';
-                    launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Launch casper`;
+                    btn.innerHTML = `<span class="status-dot text-red-500 bg-current"></span> <span class="text-white ml-2">Offline</span>`;
+                    launchText.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Initialize System`;
                 }
             }
         }
@@ -543,7 +617,7 @@
                 try {
                     const result = await window.api.stopCasper();
                     if (result.status === 'success') {
-                        showToast('casper Terminated.', 'success');
+                        showToast('System Terminated', 'success');
                         updateCasperStatus();
                     }
                 } catch (e) {
@@ -552,15 +626,22 @@
             }
         }
         function updateVoiceTag(selectEl) {
-            // No-op — reserved for future live preview badge if desired
+            // No-op
         }
 
         function switchTab(tabId, el) {
-            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            // Re-trigger animation by cloning and replacing
+            const targetPage = document.getElementById(tabId);
+            const oldPage = document.querySelector('.page.active');
             
-            document.getElementById(tabId).classList.add('active');
+            if (oldPage && oldPage.id !== tabId) {
+                oldPage.classList.remove('active');
+            }
+
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
             el.classList.add('active');
+            
+            targetPage.classList.add('active');
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
@@ -570,14 +651,15 @@
             if (window.api && window.api.onCasperError) {
                 window.api.onCasperError((errorMsg) => {
                     const btn = document.getElementById('engineStatusText');
-                    btn.innerHTML = `<span class="status-indicator" style="background:#ff3b30;box-shadow:0 0 10px #ff3b30;"></span> Offline`;
+                    btn.innerHTML = `<span class="status-dot text-red-500 bg-current"></span> <span class="text-white ml-2">Offline</span>`;
                     const launchCard = document.getElementById('launchCard');
                     const launchText = document.getElementById('launchText');
-                    launchCard.style.borderColor = '#3f3f3c';
-                    launchCard.style.background = '#242422';
+                    launchCard.style.background = '';
+                    launchCard.style.color = '';
+                    launchCard.style.boxShadow = '';
                     launchCard.onclick = validateAndLaunchCasper;
                     launchText.style.color = '';
-                    launchText.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Launch casper`;
+                    launchText.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Initialize System`;
                     
                     alert("Casper Backend Crashed:\n\n" + errorMsg);
                 });
@@ -587,7 +669,7 @@
                 const config = await window.api.readEnv();
                 
                 if (config.Casper_USER_ID) {
-                    document.getElementById('greetingText').innerText = `Good evening, ${config.Casper_USER_ID}.`;
+                    document.getElementById('greetingText').innerText = `Welcome back, ${config.Casper_USER_ID}.`;
                 }
 
                 for (const key in config) {
@@ -604,7 +686,7 @@
             
             const btn = document.getElementById('saveBtn');
             const originalText = btn.innerHTML;
-            btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> Processing...`;
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> Saving...`;
             
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
@@ -616,7 +698,7 @@
                     if (result.status === 'success') {
                         showToast(result.message, 'success');
                         if (data.Casper_USER_ID) {
-                            document.getElementById('greetingText').innerText = `Good evening, ${data.Casper_USER_ID}.`;
+                            document.getElementById('greetingText').innerText = `Welcome back, ${data.Casper_USER_ID}.`;
                         }
                     } else {
                         showToast(result.message, 'error');
@@ -635,10 +717,10 @@
             
             const icon = document.getElementById('toastIcon');
             if (type === 'error') {
-                icon.setAttribute('stroke', '#ff3b30');
+                icon.setAttribute('stroke', '#ef4444');
                 icon.innerHTML = `<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>`;
             } else {
-                icon.setAttribute('stroke', '#34c759');
+                icon.setAttribute('stroke', '#10b981');
                 icon.innerHTML = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>`;
             }
 

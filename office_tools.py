@@ -4,6 +4,7 @@ Uses win32com to natively control Word, Excel, and PowerPoint on Windows.
 """
 
 import os
+import asyncio
 import logging
 from typing import Optional
 from livekit.agents import function_tool, RunContext
@@ -23,10 +24,29 @@ DEFAULT_SAVE_DIR = os.path.expanduser(r"~\Documents\Cipher\Casper_Docs")
 os.makedirs(DEFAULT_SAVE_DIR, exist_ok=True)
 
 
+def _init_com():
+    """Initializes COM for the current thread."""
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+
+
+def _uninit_com():
+    """Uninitializes COM for the current thread."""
+    try:
+        import pythoncom
+        pythoncom.CoUninitialize()
+    except Exception:
+        pass
+
+
 def _get_app(app_name: str, visible: bool = False):
     """Helper to dispatch and get the COM app."""
     if not WIN32_AVAILABLE:
         raise RuntimeError("win32com.client is not installed on this system.")
+    _init_com()
     app = win32com.client.Dispatch(app_name)
     app.Visible = visible
     return app
@@ -93,21 +113,244 @@ async def word_create_document(context: RunContext, text: str) -> str:
         return f"Failed to create Word document: {str(e)}"
 
 
+def _sync_word_read_active_document() -> str:
+    """Synchronous read for MS Word document using COM with UIA fallback."""
+    if not WIN32_AVAILABLE:
+        return "win32com is not available on this system."
+    _init_com()
+    
+    # 1. Primary: Try Word COM via GetActiveObject
+    try:
+        word = win32com.client.GetActiveObject("Word.Application")
+        if word and word.Documents.Count > 0:
+            doc = word.ActiveDocument
+            content = doc.Content.Text
+            if content and content.strip():
+                return f"MS Word Document Content ({doc.Name}):\n{content.strip()}"
+            return f"MS Word Document ({doc.Name}) is currently open but empty."
+        elif word and word.Documents.Count == 0:
+            return "MS Word is open, but no document is currently open in it."
+    except Exception as e:
+        logger.warning(f"COM GetActiveObject for Word returned: {e}. Trying UIA fallback...")
+
+    # 2. Fallback: Try reading via UI Automation
+    try:
+        from pywinauto import Desktop
+        desktop = Desktop(backend="uia")
+        for w in desktop.windows():
+            try:
+                title = w.window_text().strip()
+                if "word" in title.lower():
+                    for c in w.descendants():
+                        if c.element_info.control_type == "Document":
+                            try:
+                                txt = c.iface_text.DocumentRange.GetText(-1)
+                                if txt and txt.strip():
+                                    return f"MS Word Document Content ({title}):\n{txt.strip()}"
+                            except Exception:
+                                pass
+                            try:
+                                val = c.iface_value.CurrentValue
+                                if val and val.strip():
+                                    return f"MS Word Document Content ({title}):\n{val.strip()}"
+                            except Exception:
+                                pass
+            except Exception:
+                continue
+    except Exception as uia_err:
+        logger.warning(f"UIA fallback for Word failed: {uia_err}")
+    finally:
+        _uninit_com()
+
+    return "No active MS Word document could be read. Please ensure Microsoft Word is open with a document loaded."
+
+
 @function_tool()
 async def word_read_active_document(context: RunContext) -> str:
     """
-    Read all the text from the currently active MS Word document.
+    Read all the text from the currently active Microsoft Word document.
+    ALWAYS use this tool whenever the user asks to read, check, summarize, or see what is written in Word.
     """
+    return await asyncio.to_thread(_sync_word_read_active_document)
+
+
+def _sync_notepad_read_active_window() -> str:
+    """Synchronous read for active Notepad window using UIA."""
     try:
-        word = win32com.client.GetActiveObject("Word.Application")
-        if not word.Documents.Count:
-            return "No documents are currently open in Word."
-        
-        doc = word.ActiveDocument
-        content = doc.Content.Text
-        return f"Document Content:\n{content}"
+        from pywinauto import Desktop
+        desktop = Desktop(backend="uia")
+        notepad_win = None
+
+        # Search for any open Notepad window
+        for w in desktop.windows():
+            try:
+                title = w.window_text().strip()
+                if "notepad" in title.lower():
+                    notepad_win = w
+                    break
+            except Exception:
+                continue
+
+        if not notepad_win:
+            return "No open Notepad window was found on your desktop."
+
+        win_title = notepad_win.window_text().strip()
+        content = ""
+
+        # Search for Document (Windows 11) or Edit (Windows 10) control
+        for control in notepad_win.descendants():
+            try:
+                c_type = control.element_info.control_type
+                if c_type in ["Document", "Edit"]:
+                    # Try Value pattern (fastest on Windows 11 Document and Windows 10 Edit)
+                    try:
+                        val = control.iface_value.CurrentValue
+                        if val and val.strip():
+                            content = val
+                            break
+                    except Exception:
+                        pass
+
+                    # Try Text pattern
+                    try:
+                        txt = control.iface_text.DocumentRange.GetText(-1)
+                        if txt and txt.strip():
+                            content = txt
+                            break
+                    except Exception:
+                        pass
+
+                    # Try window_text
+                    try:
+                        txt = control.window_text()
+                        if txt and txt.strip():
+                            content = txt
+                            break
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+
+        if not content or not content.strip():
+            return f"Notepad is open ('{win_title}'), but it appears to be empty."
+
+        return f"Notepad Content ('{win_title}'):\n{content.strip()}"
     except Exception as e:
-        return f"Failed to read Word document. Is Word open? Error: {str(e)}"
+        logger.error(f"Error reading Notepad window: {e}")
+        return f"Failed to read Notepad: {str(e)}"
+
+
+@function_tool()
+async def notepad_read_active_window(context: RunContext) -> str:
+    """
+    Read all the text from the currently open or active Notepad window.
+    ALWAYS use this tool whenever the user asks to read, check, summarize, or see what is written in Notepad.
+    """
+    return await asyncio.to_thread(_sync_notepad_read_active_window)
+
+
+def _sync_notepad_write_active_window(new_content: str, append: bool = False) -> str:
+    """Updates the open Notepad window's text directly via UIA and syncs to disk if saved."""
+    try:
+        from pywinauto import Desktop
+        desktop = Desktop(backend="uia")
+        notepad_win = None
+        for w in desktop.windows():
+            try:
+                title = w.window_text().strip()
+                if "notepad" in title.lower():
+                    notepad_win = w
+                    break
+            except Exception:
+                continue
+
+        if not notepad_win:
+            return "No open Notepad window was found on your desktop to edit."
+
+        win_title = notepad_win.window_text().strip()
+        updated = False
+
+        for control in notepad_win.descendants():
+            try:
+                c_type = control.element_info.control_type
+                if c_type in ["Document", "Edit"]:
+                    final_text = new_content
+                    if append:
+                        current_val = ""
+                        try:
+                            current_val = control.iface_value.CurrentValue or ""
+                        except Exception:
+                            pass
+                        if not current_val:
+                            try:
+                                current_val = control.iface_text.DocumentRange.GetText(-1) or ""
+                            except Exception:
+                                pass
+                        final_text = (current_val.rstrip() + "\r\n\r\n" + new_content.strip()) if current_val.strip() else new_content.strip()
+
+                    # 1. Try SetValue pattern (Windows 11 Document & Windows 10 Edit)
+                    try:
+                        control.iface_value.SetValue(final_text)
+                        updated = True
+                        break
+                    except Exception:
+                        pass
+
+                    # 2. Try set_text (pywinauto Edit wrapper)
+                    try:
+                        control.set_text(final_text)
+                        updated = True
+                        break
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+
+        if not updated:
+            return f"Found Notepad ('{win_title}'), but could not write to its text control."
+
+        # Also check if this Notepad window is associated with a file on Desktop
+        saved_msg = ""
+        try:
+            raw_name = win_title.split("- Notepad")[0].strip().lstrip("*").strip()
+            if raw_name and raw_name.lower() != "untitled":
+                desktop_file = os.path.join(os.path.expanduser("~"), "Desktop", raw_name)
+                if os.path.exists(desktop_file):
+                    with open(desktop_file, "w", encoding="utf-8") as f:
+                        f.write(final_text)
+                    saved_msg = f" (Also synced and saved directly to {desktop_file})"
+        except Exception:
+            pass
+
+        action = "Appended to" if append else "Updated"
+        return f"Successfully {action.lower()} Notepad ('{win_title}') live on screen.{saved_msg}"
+    except Exception as e:
+        logger.error(f"Error writing to Notepad: {e}")
+        return f"Failed to edit Notepad: {str(e)}"
+
+
+@function_tool()
+async def notepad_write_active_window(context: RunContext, new_content: str) -> str:
+    """
+    Directly updates or replaces the text inside the currently open Notepad window on screen.
+    ALWAYS use this tool whenever the user asks to edit, rewrite, update, or change the story/notes in Notepad.
+    
+    Args:
+        new_content: The complete updated text to place into Notepad.
+    """
+    return await asyncio.to_thread(_sync_notepad_write_active_window, new_content, False)
+
+
+@function_tool()
+async def notepad_append_active_window(context: RunContext, text_to_append: str) -> str:
+    """
+    Appends text to the end of the currently open Notepad window on screen.
+    Use this when the user asks to add something or append text to the current Notepad document.
+    
+    Args:
+        text_to_append: The new text to add to the bottom of the Notepad document.
+    """
+    return await asyncio.to_thread(_sync_notepad_write_active_window, text_to_append, True)
 
 
 @function_tool()
@@ -244,5 +487,10 @@ OFFICE_TOOLS = [
     word_save_document,
     excel_create_workbook,
     excel_read_active_sheet,
-    ppt_create_presentation
+    ppt_create_presentation,
+    notepad_read_active_window,
+    notepad_write_active_window,
+    notepad_append_active_window,
 ]
+
+

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Island</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+        }
+
+        .dynamic-island {
+            position: absolute;
+            top: -100px;
+            background: #000000;
+            border-radius: 40px;
+            padding: 8px 16px 8px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 360px;
+            height: 48px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255, 255, 255, 0.2) inset;
+            transition: top 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.3s ease;
+            pointer-events: auto;
+        }
+
+        .dynamic-island.show {
+            top: 20px;
+        }
+
+        /* Left Side: Art + Text */
+        .island-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Animated Equalizer inside a circular logo */
+        .album-art {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1db954, #124041);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            box-shadow: 0 0 10px rgba(29, 185, 84, 0.3);
+            flex-shrink: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .album-art::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.3); /* Dark overlay for image */
+            border-radius: 50%;
+            z-index: 1;
+        }
+
+        .bar {
+            width: 3px;
+            background-color: #fff;
+            border-radius: 2px;
+            animation: eq-bounce 1s infinite ease-in-out;
+            z-index: 2;
+            box-shadow: 0 0 2px #000;
+        }
+
+        .bar1 { height: 10px; animation-delay: 0s; }
+        .bar2 { height: 16px; animation-delay: -0.2s; }
+        .bar3 { height: 12px; animation-delay: -0.4s; }
+        .bar4 { height: 18px; animation-delay: -0.6s; }
+
+        .album-art.paused .bar {
+            animation-play-state: paused;
+            height: 4px;
+            transition: height 0.3s;
+        }
+
+        @keyframes eq-bounce {
+            0%, 100% { height: 8px; }
+            50% { height: 22px; }
+        }
+
+        /* Text */
+        .music-title-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .music-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        .music-subtitle {
+            font-size: 11px;
+            color: #888888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Right Side: Controls */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-right: 5px;
+        }
+
+        .control-btn {
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s, opacity 0.2s;
+            opacity: 0.7;
+            outline: none;
+        }
+
+        .control-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .control-btn:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .control-btn:active {
+            transform: scale(0.9);
+        }
+
+        .play-btn {
+            opacity: 1;
+        }
+
+        .play-btn svg {
+            width: 26px;
+            height: 26px;
+        }
+
+        .close-btn {
+            margin-left: 8px; /* Extra separation from the main controls */
+            padding-left: 12px;
+            border-left: 1px solid rgba(255, 255, 255, 0.2); /* Separator line */
+        }
+
+        .close-btn:hover {
+            color: #ff4d4d; /* Red on hover */
+        }
+        
+        .close-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dynamic-island" id="music-popup">
+        <div class="island-left">
+            <div class="album-art" id="album-art">
+                <div class="bar bar1"></div>
+                <div class="bar bar2"></div>
+                <div class="bar bar3"></div>
+                <div class="bar bar4"></div>
+            </div>
+            <div class="music-title-container">
+                <div class="music-title" id="music-title">Song Name</div>
+                <div class="music-subtitle">PLAYING</div>
+            </div>
+        </div>
+        
+        <div class="island-right controls">
+            <button onclick="sendCmd('CMD:PREV')" title="Previous" class="control-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button onclick="togglePlayPause()" id="play-pause-btn" title="Play/Pause" class="control-btn play-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor" id="pause-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor" id="play-icon" style="display:none;"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button onclick="sendCmd('CMD:SKIP')" title="Next" class="control-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+            <button onclick="sendCmd('CMD:STOP')" title="Stop & Close" class="control-btn close-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const $musicPopup = document.getElementById('music-popup');
+        const $musicTitle = document.getElementById('music-title');
+        const $albumArt = document.getElementById('album-art');
+        const $pauseIcon = document.getElementById('pause-icon');
+        const $playIcon = document.getElementById('play-icon');
+
+        let isPaused = false;
+
+        function togglePlayPause() {
+            if (isPaused) {
+                sendCmd('CMD:RESUME');
+            } else {
+                sendCmd('CMD:PAUSE');
+            }
+        }
+
+        function setPaused(paused) {
+            isPaused = paused;
+            if (paused) {
+                $pauseIcon.style.display = 'none';
+                $playIcon.style.display = 'block';
+                $albumArt.classList.add('paused');
+            } else {
+                $pauseIcon.style.display = 'block';
+                $playIcon.style.display = 'none';
+                $albumArt.classList.remove('paused');
+            }
+        }
+
+        function sendCmd(cmd) {
+            if (window.electronAPI && window.electronAPI.sendUICommand) {
+                window.electronAPI.sendUICommand(cmd);
+                if (cmd === 'CMD:STOP') {
+                    $musicPopup.classList.remove('show');
+                } else if (cmd === 'CMD:PAUSE') {
+                    setPaused(true);
+                } else if (cmd === 'CMD:RESUME') {
+                    setPaused(false);
+                }
+            }
+        }
+
+        if (window.electronAPI && window.electronAPI.onUIState) {
+            window.electronAPI.onUIState((state) => {
+                if (state.startsWith('MUSIC:')) {
+                    const data = state.substring(6);
+                    let title = data;
+                    let imgUrl = '';
+                    if (data.includes('|IMG:')) {
+                        const parts = data.split('|IMG:');
+                        title = parts[0];
+                        imgUrl = parts[1];
+                    }
+                    
+                    $musicTitle.textContent = title;
+                    
+                    if (imgUrl) {
+                        $albumArt.style.backgroundImage = `url("${imgUrl}")`;
+                        $albumArt.style.backgroundSize = 'cover';
+                        $albumArt.style.backgroundPosition = 'center';
+                    } else {
+                        $albumArt.style.backgroundImage = 'linear-gradient(135deg, #1db954, #124041)';
+                    }
+                    
+                    $musicPopup.classList.add('show');
+                    setPaused(false);
+                }
+            });
+        }
+        
+        $musicPopup.addEventListener('mouseenter', () => {
+            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+                window.electronAPI.setIgnoreMouseEvents(false);
+            }
+        });
+        $musicPopup.addEventListener('mouseleave', () => {
+            if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+                window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+            }
+        });
+    </script>
+</body>
+</html>

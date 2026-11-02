@@ -1,6 +1,6 @@
 # 🎬 Complete YouTube Controls - Voice Commands Guide
 
-## ✅ **ALL YouTube Controls Now Available (26 Tools Total)**
+## ✅ **ALL YouTube Controls Now Available (28 Tools Total)**
 
 ---
 
@@ -11,6 +11,7 @@
 "Play the video"
 "Pause the video"
 "Replay this video"              ✨ NEW - Start from beginning
+"Play the 2nd video"             ✨ NEW - Play nth video (1st, 2nd, 3rd, etc.)
 ```
 
 ### Skip Controls
@@ -51,6 +52,16 @@
 "Toggle theater mode"            ✨ NEW
 "Enable picture in picture"      ✨ NEW
 "Toggle PiP"                     ✨ NEW
+```
+
+---
+
+## ⚙️ **Quality Controls**
+
+```
+"Set quality to 1080p"           ✨ NEW
+"Change resolution to 720p"      ✨ NEW
+"Set video quality to Auto"      ✨ NEW
 ```
 
 ---
@@ -101,12 +112,13 @@ Returns:
 
 ---
 
-## 📋 **Complete List - 26 YouTube Tools**
+## 📋 **Complete List - 28 YouTube Tools**
 
-### Navigation (3)
+### Navigation (4)
 1. `youtube_search` - Search without playing
 2. `youtube_play_video` - Search and play
-3. `chrome_navigate` - Go to YouTube
+3. `youtube_play_nth_video` - Play 1st/2nd/3rd video on current page ✨ NEW
+4. `chrome_navigate` - Go to YouTube
 
 ### Playback (5)
 4. `youtube_control_playback` - Play/pause/mute/unmute/fullscreen
@@ -121,19 +133,20 @@ Returns:
 11. `youtube_volume_down` - Decrease ✨ NEW
 12. Mute/unmute (in playback control)
 
-### Display (2)
-13. `youtube_toggle_theater_mode` ✨ NEW
-14. `youtube_toggle_picture_in_picture` ✨ NEW
+### Display & Quality (3)
+14. `youtube_toggle_theater_mode` ✨ NEW
+15. `youtube_toggle_picture_in_picture` ✨ NEW
+16. `youtube_set_quality` - Set video resolution ✨ NEW
 
 ### Playlist (2)
-15. `youtube_next_video` ✨ NEW
-16. `youtube_previous_video` ✨ NEW
+17. `youtube_next_video` ✨ NEW
+18. `youtube_previous_video` ✨ NEW
 
 ### Info (1)
-17. `youtube_get_video_info` ✨ NEW
+19. `youtube_get_video_info` ✨ NEW
 
 ### Ads (1)
-18. `youtube_skip_ad`
+20. `youtube_skip_ad`
 
 ---
 
@@ -184,4 +197,4 @@ All commands execute in **<500ms**:
 
 ---
 
-**Total: 26 YouTube automation tools - Everything you need for complete video control!** 🎉
+**Total: 28 YouTube automation tools - Everything you need for complete video control!** 🎉

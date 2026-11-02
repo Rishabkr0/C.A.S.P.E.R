@@ -36,6 +36,10 @@ build/
 .cache/
 .claude/
 chrome_profile/
+casper_chrome_profile/
+casper_chrome_profile
 local_qdrant_db/
 local_qdrant_db_test/
 local_qdrant_db_test_key/
+worker_workspace/
+worker_workspace
