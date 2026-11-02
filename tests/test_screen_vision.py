@@ -1,66 +1,56 @@
-import unittest
-import math
-from PIL import Image
-from screen_vision.gesture_detector import _check_circle_geometry
-from screen_vision.visual_memory import set_focused_region, get_active_focus
-from screen_vision.screen_streamer import ScreenVideoInput
-from screen_vision.tools import inspect_focused_screen_area
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-
-class TestScreenVision(unittest.TestCase):
-
-    def test_circle_geometry_detection(self):
-        # 1. Synthetic smooth circular trajectory (radius 120, 30 points)
-        cx, cy, r = 400, 400, 120
-        pts = [
-            (int(cx + r * math.cos(2 * math.pi * i / 28)), int(cy + r * math.sin(2 * math.pi * i / 28)))
-            for i in range(29)
-        ]
-        is_circle, bbox = _check_circle_geometry(pts)
-        self.assertTrue(is_circle, "Failed to detect synthetic circular loop")
-        self.assertIsNotNone(bbox)
-        self.assertGreaterEqual(bbox[2] - bbox[0], 200)
-
-        # 2. Synthetic straight horizontal line (should reject)
-        line_pts = [(100 + i * 15, 200) for i in range(30)]
-        is_circle_line, _ = _check_circle_geometry(line_pts)
-        self.assertFalse(is_circle_line, "Incorrectly flagged a straight line as a circle")
-
-        # 3. Small jitter (fidgeting, radius 15px - should reject)
-        jitter_pts = [
-            (int(200 + 15 * math.cos(2 * math.pi * i / 20)), int(200 + 15 * math.sin(2 * math.pi * i / 20)))
-            for i in range(21)
-        ]
-        is_circle_jitter, _ = _check_circle_geometry(jitter_pts)
-        self.assertFalse(is_circle_jitter, "Incorrectly flagged tiny jitter as an intentional circle")
-
-    def test_visual_memory_buffering(self):
-        test_img = Image.new("RGB", (160, 120), color=(0, 200, 100))
-        bbox = (100, 100, 260, 220)
-        set_focused_region(bbox, test_img, text_hint="test error widget")
-
-        focus = get_active_focus(max_age_seconds=10.0)
-        self.assertIsNotNone(focus)
-        self.assertEqual(focus["bbox"], bbox)
-        self.assertEqual(focus["width"], 160)
-        self.assertEqual(focus["height"], 120)
-        self.assertGreater(len(focus["image_bytes"]), 0)
-
-    def test_screen_streamer_on_demand(self):
-        streamer = ScreenVideoInput(target_fps=1.0, max_dim=1024)
-        self.assertFalse(streamer.is_enabled)
-        streamer.enable()
-        self.assertTrue(streamer.is_enabled)
-        streamer.disable()
-        self.assertFalse(streamer.is_enabled)
-        streamer.stop()
-
-    def test_inspect_tool_attributes(self):
-        from screen_vision.tools import start_screen_vision, stop_screen_vision
-        self.assertTrue(callable(inspect_focused_screen_area))
-        self.assertTrue(callable(start_screen_vision))
-        self.assertTrue(callable(stop_screen_vision))
-
-
-if __name__ == "__main__":
-    unittest.main()
+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
+kek1WkI=
+-----END CASPER ENCRYPTED FILE-----

@@ -1,138 +1,85 @@
-import sys
-import os
-import threading
-import socket
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
-from PySide6.QtCore import Qt, QObject, Signal, QUrl, QTimer
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebEngineCore import QWebEnginePage
-from PySide6.QtGui import QColor
-
-
-class CustomWebPage(QWebEnginePage):
-    """Intercept UI commands from JavaScript console and route to agent.py via UDP 49153."""
-    def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-        if message and message.startswith("UI_CMD:"):
-            cmd = message[7:].strip()
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.sendto(cmd.encode("utf-8"), ("127.0.0.1", 49153))
-                sock.close()
-            except Exception:
-                pass
-        super().javaScriptConsoleMessage(level, message, lineNumber, sourceID)
-
-
-class StateUpdater(QObject):
-    update_signal = Signal(str)
-
-
-def listen_for_commands(updater):
-    """Read state commands from stdin (sent by agent.py via subprocess)."""
-    while True:
-        try:
-            line = sys.stdin.readline()
-            if not line:
-                break
-            updater.update_signal.emit(line.strip())
-        except Exception:
-            break
-
-
-def listen_for_udp_states(updater):
-    """Listen for broadcast UI states on UDP port 49152 (e.g., from media_player.py)."""
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(("127.0.0.1", 49152))
-        while True:
-            data, _ = sock.recvfrom(4096)
-            if data:
-                updater.update_signal.emit(data.decode("utf-8", errors="ignore").strip())
-    except Exception:
-        pass
-
-
-class CasperOverlay(QWidget):
-    def __init__(self):
-        super().__init__()
-
-        # Frameless + always on top + transparent
-        self.setWindowFlags(
-            Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint |
-            Qt.Tool
-        )
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
-
-        # Position at TOP CENTER (Notch / Dynamic Island style)
-        WIN_W, WIN_H = 340, 460
-        screen = QApplication.primaryScreen().geometry()
-        x = (screen.width() - WIN_W) // 2
-        y = 0
-        self.setGeometry(x, y, WIN_W, WIN_H)
-
-        # QWebEngineView fills the window
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        self.view = QWebEngineView(self)
-        self.page = CustomWebPage(self.view)
-        self.view.setPage(self.page)
-        self.view.setAttribute(Qt.WA_TranslucentBackground)
-        self.view.setAttribute(Qt.WA_NoSystemBackground)
-        self.page.setBackgroundColor(QColor(Qt.transparent))
-
-        if getattr(sys, 'frozen', False):
-            base_dir = sys._MEIPASS
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        html_path = os.path.join(base_dir, 'jarvis_ui_side.html')
-        self.view.load(QUrl.fromLocalFile(html_path))
-        self.view.loadFinished.connect(self._on_load)
-
-        layout.addWidget(self.view)
-
-        # Stdin & UDP command listeners
-        self.updater = StateUpdater()
-        self.updater.update_signal.connect(self.set_state)
-
-        threading.Thread(
-            target=listen_for_commands,
-            args=(self.updater,),
-            daemon=True
-        ).start()
-
-        threading.Thread(
-            target=listen_for_udp_states,
-            args=(self.updater,),
-            daemon=True
-        ).start()
-
-    def _on_load(self, ok):
-        """Startup animation when UI finishes loading: stay hidden until Chrome/backend signals ready."""
-        if ok:
-            self.set_state('hidden')
-            # Fallback in case UDP is blocked
-            QTimer.singleShot(5000, lambda: self.set_state('listening'))
-
-    def set_state(self, state):
-        """
-        Map agent state strings to JS setState() calls.
-        Handles: idle, listening, speaking, waiting, thinking, tool, custom:<text>, MUSIC:...
-        """
-        safe = state.replace("'", "\\'").replace('"', '\\"')
-        self.view.page().runJavaScript(f"setState('{safe}')")
-
-
-def main():
-    app = QApplication(sys.argv)
-    overlay = CasperOverlay()
-    overlay.show()
-    sys.exit(app.exec())
-
-
-if __name__ == '__main__':
-    main()
+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
+8tRBx16t
+-----END CASPER ENCRYPTED FILE-----

@@ -1,23 +1,21 @@
-"""
-C.A.S.P.E.R. Screen Vision & Autonomous Gesture Tracking Package
-Provides on-demand ambient screen streaming (1 FPS peripheral vision)
-and kinematic circle gesture tracking for foveal high-res inspections.
-"""
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-from .screen_streamer import ScreenVideoInput, get_screen_streamer
-from .gesture_detector import CircleGestureDetector, get_gesture_detector
-from .visual_memory import set_focused_region, get_active_focus, inspect_focused_image
-from .tools import start_screen_vision, stop_screen_vision, inspect_focused_screen_area
-
-__all__ = [
-    "ScreenVideoInput",
-    "get_screen_streamer",
-    "CircleGestureDetector",
-    "get_gesture_detector",
-    "set_focused_region",
-    "get_active_focus",
-    "inspect_focused_image",
-    "start_screen_vision",
-    "stop_screen_vision",
-    "inspect_focused_screen_area"
-]
+cZBxe0UveieU1bFFt1vtOsv5E52oYQeQoQHhmTW62Yz/SjpoEx425lyCf3+rVQxSzJGua8izDNHM
+cqqosrG+MCFqz4mQf3rxK4pBj/A/EVEluFLjZff2ApDbsyvVIcp0hFOZz6SP3aCm7og3lUzekorm
+8WgXpzcOtvcNVTFDPCpGHM876KdfRGcHUhBBwozoYKj97bU2wYdMcD42C5EDqTT55K6kJCWhqVg3
+mDjad+bKc5eKXrFut3XsY1vV34PFPRZVqUv6eww41Yl9MMJHEA5ksITJrB3y1pxiu5lnAeIdQbLf
+d4uhsetRYTsu52WKVnQzYOLzyqCKRlmOjB6ntQm7Fb1ngauxArJ1FYMxe4+ErZsI9aygFSXwqIlx
+0PhwwhgROydT+kwbpjIndhDGfqVSuRTEUAfWyXimiMJI/X+sf5Zmod1z5ZyJgNdDVRuyX9biROgZ
+tCL1m1nMV/to183ULa2rqbzJeVFHTuUWyMKdQPIwl/AXwmbDla6USXguCHnusecyCmf5IxLzl+3r
+DBh+aCpJ8M59RluC4iQyNg5zX85YmU5VCXJoKTDWLBfdVIf4r39DQufait0XvVF4XQOF+c3wbtb1
+IcS1AXZyhvlsRyaVXBmMeRbBog6uWcA/2MhxCQgVaXZThnv+TUFJVvlHXole99gQPkXFiA6YUgZp
+OqdWI0FP/yOZ/FfTnNFH9oETP70E0VzVaJjD43oP64TJ6Hs8ojlMNz7RHdi2k9cbdrSoOqD8Yzon
+oQGMPWglt+lSn4MOS4lWZCzhaNfLdHeCrohi1oBtvOh3vD8fUPfAgzG2OuEXtFoL+yUx8ZsstN2u
++OIpzm8tABm2cDkG/FjfSJq8xBMMORpDaL/jCAzkY2LHMiGcgnfyk5mdwzH6bWHe8vCaqcOA8XDe
+V3ddDFFjtFNBSElOynsg79yoXLJgNDTN7roOZaQnVei2CpKQJIGrjkguXWUxgOOnxYvrtj5blfYd
+8kGCwEy/Qe3vdfGnstZIg3WG5puFq9PTVL3b/QKLfHv8astywm4Ikd/Nzab2J3FTjyjBudG3blrz
+Kg0M7Rho5sFAur0UPQRm8RNZub+8AdzSiytLnB8wt/JXw3eR55eikxETCsvdKg7JhNY=
+-----END CASPER ENCRYPTED FILE-----

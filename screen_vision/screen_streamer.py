@@ -1,108 +1,75 @@
-import asyncio
-import logging
-from typing import Optional, Tuple
-from PIL import Image, ImageGrab
-from livekit import rtc
-from livekit.agents.voice.io import VideoInput
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-_global_screen_streamer: Optional['ScreenVideoInput'] = None
-
-def get_screen_streamer() -> Optional['ScreenVideoInput']:
-    return _global_screen_streamer
-
-class ScreenVideoInput(VideoInput):
-    """
-    Continuous screen video streamer that captures the primary desktop
-    at ~1 FPS, scales it appropriately, and streams VideoFrames into Casper's
-    multimodal LiveKit / Gemini Realtime session on demand.
-    """
-
-    def __init__(self, target_fps: float = 1.0, max_dim: int = 1024):
-        global _global_screen_streamer
-        super().__init__(label="casper_screen_streamer")
-        self.target_fps = target_fps
-        self.max_dim = max_dim
-        self._running = True
-        self._enabled = False
-        self._enable_event = asyncio.Event()
-        self._last_frame_bytes: Optional[bytes] = None
-        self._last_frame_w = 640
-        self._last_frame_h = 360
-        _global_screen_streamer = self
-
-    def enable(self):
-        """Enables screen capture streaming."""
-        self._enabled = True
-        self._enable_event.set()
-        logging.info("[Screen Streamer] Screen vision mode ACTIVATED")
-
-    def disable(self):
-        """Pauses screen capture streaming (0% CPU)."""
-        self._enabled = False
-        self._enable_event.clear()
-        logging.info("[Screen Streamer] Screen vision mode DEACTIVATED (dormant)")
-
-    @property
-    def is_enabled(self) -> bool:
-        return self._enabled
-
-    def _capture_and_process_frame(self) -> Tuple[int, int, bytes]:
-        """Runs in worker thread: captures desktop and converts to RGBA buffer."""
-        try:
-            screenshot = ImageGrab.grab()
-        except Exception:
-            # Fallback if display is momentarily inaccessible
-            if self._last_frame_bytes:
-                return self._last_frame_w, self._last_frame_h, self._last_frame_bytes
-            blank = Image.new("RGBA", (self._last_frame_w, self._last_frame_h), color=(15, 15, 20, 255))
-            return blank.width, blank.height, blank.tobytes()
-
-        # Scale down maintaining aspect ratio for optimal Gemini real-time throughput
-        orig_w, orig_h = screenshot.size
-        scale = min(self.max_dim / max(orig_w, orig_h), 1.0)
-        new_w = int(orig_w * scale)
-        new_h = int(orig_h * scale)
-
-        # Ensure dimensions are even (required by most video pipelines)
-        if new_w % 2 != 0:
-            new_w -= 1
-        if new_h % 2 != 0:
-            new_h -= 1
-
-        resized = screenshot.resize((new_w, new_h), Image.Resampling.BILINEAR)
-        rgba_img = resized.convert("RGBA")
-        raw_bytes = rgba_img.tobytes()
-
-        self._last_frame_bytes = raw_bytes
-        self._last_frame_w = new_w
-        self._last_frame_h = new_h
-
-        return new_w, new_h, raw_bytes
-
-    async def __anext__(self) -> rtc.VideoFrame:
-        if not self._running:
-            raise StopAsyncIteration
-
-        # Wait dormant until vision mode is explicitly requested by user (0% CPU)
-        if not self._enabled:
-            await self._enable_event.wait()
-            if not self._running:
-                raise StopAsyncIteration
-
-        # Stream at steady interval (e.g. 1.0s for 1 FPS)
-        interval = 1.0 / max(0.2, self.target_fps)
-        await asyncio.sleep(interval)
-
-        # Offload capture and PIL operations to background thread pool
-        w, h, data = await asyncio.to_thread(self._capture_and_process_frame)
-
-        return rtc.VideoFrame(
-            width=w,
-            height=h,
-            type=rtc.VideoBufferType.RGBA,
-            data=data
-        )
-
-    def stop(self):
-        self._running = False
-        logging.info("[Screen Streamer] Screen video streaming stopped")
+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
+LFBAoy6zPA==
+-----END CASPER ENCRYPTED FILE-----

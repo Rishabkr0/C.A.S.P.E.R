@@ -1,670 +1,528 @@
-import os
-import sys
-import time
-import json
-import shutil
-import socket
-import subprocess
-import asyncio
-import logging
-from typing import Optional, Dict, Any, List
-from google import genai
-from google.genai import types
-from livekit.agents import function_tool, RunContext
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-logger = logging.getLogger("worker_agent")
-
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-WORKER_WORKSPACE = os.path.join(PROJECT_ROOT, "worker_workspace")
-os.makedirs(WORKER_WORKSPACE, exist_ok=True)
-
-# Lock to ensure only one heavy background worker task executes at a time
-_worker_lock = asyncio.Lock()
-_current_worker_task: Optional[asyncio.Task] = None
-_current_worker_proc: Optional[asyncio.subprocess.Process] = None
-
-def cancel_current_worker() -> bool:
-    """Cancels any running background worker task and terminates its subprocess tree immediately."""
-    global _current_worker_task, _current_worker_proc
-    stopped_anything = False
-
-    # 1. Terminate running subprocess tree (OpenCode / node / python)
-    if _current_worker_proc and _current_worker_proc.returncode is None:
-        try:
-            pid = _current_worker_proc.pid
-            logger.info(f"Terminating background worker subprocess tree PID: {pid}")
-            subprocess.run(f"taskkill /pid {pid} /T /F", shell=True, capture_output=True)
-            stopped_anything = True
-        except Exception as e:
-            logger.warning(f"Error terminating worker process: {e}")
-        finally:
-            _current_worker_proc = None
-
-    # 2. Cancel the asyncio task
-    if _current_worker_task and not _current_worker_task.done():
-        logger.info("Cancelling background worker asyncio task")
-        _current_worker_task.cancel()
-        _current_worker_task = None
-        stopped_anything = True
-
-    # 3. Dismiss To-Do card in Dynamic Island overlay
-    broadcast_todo_state({
-        "title": "Task Cancelled",
-        "model": "Casper",
-        "status": "Task halted by Boss.",
-        "todos": [],
-        "all_done": True
-    })
-
-    return stopped_anything
-
-def broadcast_todo_state(data: dict):
-    """Broadcasts todo checklist JSON to Electron Dynamic Island overlay via UDP 49152."""
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        payload = f"TODO:{json.dumps(data)}"
-        sock.sendto(payload.encode('utf-8'), ('127.0.0.1', 49152))
-        sock.close()
-    except Exception as e:
-        logger.warning(f"Failed to broadcast todo state: {e}")
-
-def _resolve_path(path: str) -> str:
-    """
-    Resolves a path:
-    - If path is absolute or starts with ~ or %, expands and returns it.
-    - If path starts with common user dirs (Desktop, Downloads, Documents, etc.), resolves to user's home.
-    - Otherwise (e.g. 'script.py', 'temp.txt'), resolves into WORKER_WORKSPACE to keep project root clean.
-    """
-    raw = os.path.expanduser(os.path.expandvars(path.strip()))
-    if os.path.isabs(raw):
-        return os.path.normpath(raw)
-    
-    first_part = raw.replace('\\', '/').split('/')[0].lower()
-    if first_part in ['desktop', 'downloads', 'documents', 'pictures', 'videos']:
-        return os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
-        
-    return os.path.normpath(os.path.join(WORKER_WORKSPACE, raw))
-
-def speak_text(text: str):
-    """Speaks text using a female system voice if available."""
-    try:
-        import win32com.client
-        speaker = win32com.client.Dispatch("SAPI.SpVoice")
-        voices = speaker.GetVoices()
-        for v in voices:
-            if "Zira" in v.GetDescription():
-                speaker.Voice = v
-                break
-        speaker.Speak(text)
-    except Exception as e:
-        logger.error(f"TTS failed: {e}")
-
-def create_directory(path: str) -> str:
-    """Creates a directory/folder if it doesn't already exist."""
-    try:
-        target = _resolve_path(path)
-        os.makedirs(target, exist_ok=True)
-        return f"Successfully created directory: {target}"
-    except Exception as e:
-        return f"Error creating directory: {e}"
-
-def delete_file_or_dir(path: str) -> str:
-    """Deletes a file or directory."""
-    try:
-        target = _resolve_path(path)
-        if not os.path.exists(target):
-            return f"Path does not exist: {target}"
-        if os.path.isdir(target):
-            shutil.rmtree(target)
-            return f"Successfully deleted directory: {target}"
-        else:
-            os.remove(target)
-            return f"Successfully deleted file: {target}"
-    except Exception as e:
-        return f"Error deleting path: {e}"
-
-def read_file(path: str) -> str:
-    """Reads the contents of a text file."""
-    try:
-        target = _resolve_path(path)
-        if not os.path.exists(target):
-            return f"File not found: {target}"
-        with open(target, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except Exception as e:
-        return f"Error reading file: {e}"
-
-def write_file(path: str, content: str) -> str:
-    """Writes content to a file, creating parent directories if needed."""
-    try:
-        target = _resolve_path(path)
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(target, "w", encoding="utf-8") as f:
-            f.write(content)
-        return f"Successfully wrote {len(content)} characters to {target}"
-    except Exception as e:
-        return f"Error writing file: {e}"
-
-def list_dir(path: str = ".") -> str:
-    """Lists the files and folders in a directory."""
-    try:
-        target = _resolve_path(path)
-        if not os.path.exists(target):
-            return f"Directory not found: {target}"
-        entries = os.listdir(target)
-        result = []
-        for e in entries:
-            full = os.path.join(target, e)
-            tag = "[DIR]" if os.path.isdir(full) else "[FILE]"
-            result.append(f"{tag} {e}")
-        return "\n".join(result) if result else "Directory is empty."
-    except Exception as e:
-        return f"Error listing directory: {e}"
-
-def run_python_script(script_path: str) -> str:
-    """Executes a Python script located at script_path and returns stdout and stderr."""
-    try:
-        target = _resolve_path(script_path)
-        if not os.path.exists(target):
-            return f"Script file not found: {target}"
-        res = subprocess.run([sys.executable, target], capture_output=True, text=True, timeout=60, cwd=os.path.dirname(target))
-        output = ""
-        if res.stdout:
-            output += f"STDOUT:\n{res.stdout}\n"
-        if res.stderr:
-            output += f"STDERR:\n{res.stderr}\n"
-        return output if output else "Script executed with no output."
-    except Exception as e:
-        return f"Error executing Python script: {e}"
-
-def open_in_notepad(path: str) -> str:
-    """Opens a text file in Windows Notepad so the user can see and edit it."""
-    try:
-        target = _resolve_path(path)
-        if not os.path.exists(target):
-            return f"File does not exist: {target}"
-        subprocess.Popen(["notepad.exe", target])
-        return f"Successfully opened {target} in Notepad."
-    except Exception as e:
-        return f"Error opening Notepad: {e}"
-
-def find_design_image(task_instruction: str = "") -> tuple[str, str]:
-    """
-    Finds the active visual design screenshot and original filename.
-    Only attaches an image if:
-    1. A specific filename (e.g. 1.png) is mentioned in task_instruction.
-    2. The user's instruction explicitly expresses intent to clone/replicate a design or screenshot.
-    3. An image was uploaded very recently (within 15 minutes) and design intent is indicated.
-    Prevents attaching stale images from previous sessions when building new websites from scratch.
-    """
-    uploads_dir = os.path.join(WORKER_WORKSPACE, "uploads")
-    os.makedirs(uploads_dir, exist_ok=True)
-    
-    keywords = ["design", "screenshot", "image", "clone", "replicate", "reference", "photo", "look like", "ui", "mockup", "wireframe", "attachment"]
-    instruction_lower = task_instruction.lower()
-    has_design_intent = any(k in instruction_lower for k in keywords)
-
-    # 1. Check if a specific file name like '1.png' was mentioned in user instruction
-    import re
-    mentioned = re.findall(r'[\w\-.]+\.(?:png|jpg|jpeg|webp)', task_instruction, re.IGNORECASE)
-    search_dirs = [
-        uploads_dir,
-        os.path.join(os.path.expanduser("~"), "Desktop"),
-        os.path.join(os.path.expanduser("~"), "Downloads"),
-        WORKER_WORKSPACE
-    ]
-    for filename in mentioned:
-        for sdir in search_dirs:
-            candidate = os.path.join(sdir, filename)
-            if os.path.exists(candidate) and os.path.isfile(candidate):
-                logger.info(f"Found mentioned design image: {candidate}")
-                return candidate, filename
-
-    # 2. Check explicit latest_design only if uploaded recently (< 15 mins) OR user indicated design intent
-    latest_png = os.path.join(uploads_dir, "latest_design.png")
-    latest_meta = os.path.join(uploads_dir, "latest_design.json")
-    if os.path.exists(latest_png):
-        mtime = os.path.getmtime(latest_png)
-        is_recent = (time.time() - mtime) < 900
-        if is_recent or has_design_intent:
-            orig_name = "latest_design.png"
-            try:
-                if os.path.exists(latest_meta):
-                    with open(latest_meta, "r", encoding="utf-8") as mf:
-                        orig_name = json.load(mf).get("filename", orig_name)
-            except Exception:
-                pass
-            return latest_png, orig_name
-
-    # 3. Check newest image in uploads ONLY if user instruction explicitly requests design cloning
-    if has_design_intent and os.path.exists(uploads_dir):
-        all_imgs = [
-            os.path.join(uploads_dir, f)
-            for f in os.listdir(uploads_dir)
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
-        ]
-        if all_imgs:
-            all_imgs.sort(key=os.path.getmtime, reverse=True)
-            chosen = all_imgs[0]
-            if (time.time() - os.path.getmtime(chosen)) < 3600:
-                logger.info(f"Using newest uploaded design image for explicit design request: {chosen}")
-                return chosen, os.path.basename(chosen)
-
-    return "", ""
-
-async def extract_visual_blueprint(image_path: str) -> dict:
-    """Uses Gemini to extract a structured visual design blueprint in 3-5 seconds."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return {}
-
-        client = genai.Client(api_key=api_key)
-        with open(image_path, "rb") as f:
-            img_bytes = f.read()
-
-        part = types.Part.from_bytes(
-            data=img_bytes,
-            mime_type="image/jpeg" if image_path.lower().endswith((".jpg", ".jpeg")) else "image/png"
-        )
-        prompt = (
-            "Analyze this website / UI design screenshot and extract an exact visual blueprint:\n"
-            "Respond ONLY with valid JSON formatted as:\n"
-            "{\n"
-            '  "theme": "dark | light | minimal | creative",\n'
-            '  "color_palette": {"background": "#hex", "primary": "#hex", "accent": "#hex", "text": "#hex", "card": "#hex"},\n'
-            '  "typography": {"font_family_serif": "...", "font_family_sans": "...", "headings": "...", "body": "..."},\n'
-            '  "layout_structure": ["Navbar with logo & links", "Hero section (split layout)", "Featured projects/cards", "Footer"],\n'
-            '  "exact_content": {"headline": "...", "subheadline": "...", "navigation_items": ["..."], "cta_buttons": ["..."]},\n'
-            '  "css_styling_notes": "Key gradients, border radii, shadows, spacing, and micro-interactions"\n'
-            "}"
-        )
-
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-3.5-flash-lite",
-            contents=[part, prompt]
-        )
-        text = response.text.strip()
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0].strip()
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0].strip()
-        return json.loads(text)
-    except Exception as e:
-        logger.warning(f"Fast visual blueprint extraction skipped ({e})")
-        return {}
-
-async def run_opencode_task(task_instruction: str) -> str:
-    """
-    Executes a heavy agentic task using DeepSeek V4.1 Flash via OpenCode CLI.
-    Runs non-interactively in worker_workspace with automatic tool approvals.
-    Demands that DeepSeek first generates a To-Do checklist in todo.json and updates it live.
-    """
-    desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop").replace("\\", "/")
-    workspace_dir = WORKER_WORKSPACE.replace("\\", "/")
-    model_id = os.getenv("OPENCODE_WORKER_MODEL", "opencode/deepseek-v4.1-flash-free")
-    todo_file = os.path.join(WORKER_WORKSPACE, "todo.json")
-
-    # Clean up previous todo.json if any
-    try:
-        if os.path.exists(todo_file):
-            os.remove(todo_file)
-    except Exception:
-        pass
-
-    short_title = task_instruction.strip()
-    if len(short_title) > 36:
-        short_title = short_title[:33] + "..."
-
-    uploads_dir = os.path.join(WORKER_WORKSPACE, "uploads")
-    design_image_path, orig_name = find_design_image(task_instruction)
-    
-    design_attachment_section = ""
-    extra_files = []
-    blueprint = {}
-
-    if design_image_path and os.path.exists(design_image_path):
-        broadcast_todo_state({
-            "title": short_title,
-            "model": "DeepSeek V4.1",
-            "status": "Analyzing visual screenshot...",
-            "todos": [
-                {"id": 1, "text": f"Analyzing '{orig_name}' (palette, fonts & layout)...", "status": "in_progress"},
-                {"id": 2, "text": "Create index.html with semantic structure", "status": "pending"},
-                {"id": 3, "text": "Build styles.css with matching aesthetic & colors", "status": "pending"},
-                {"id": 4, "text": "Add interactive features & finalize deliverable", "status": "pending"}
-            ],
-            "all_done": False
-        })
-
-        blueprint = await extract_visual_blueprint(design_image_path)
-        blueprint_md = ""
-        if blueprint:
-            blueprint_path = os.path.join(WORKER_WORKSPACE, "design_blueprint.json")
-            try:
-                with open(blueprint_path, "w", encoding="utf-8") as bf:
-                    json.dump(blueprint, bf, indent=2)
-                extra_files.append(blueprint_path)
-            except Exception:
-                pass
-            blueprint_md = f"\nEXTRACTED VISUAL DESIGN BLUEPRINT:\n```json\n{json.dumps(blueprint, indent=2)}\n```\n"
-
-        initial_todos = {
-            "title": short_title,
-            "model": "DeepSeek V4.1",
-            "todos": [
-                {"id": 1, "text": f"Visual design analyzed ({orig_name})", "status": "done"},
-                {"id": 2, "text": "Create index.html with semantic structure", "status": "in_progress"},
-                {"id": 3, "text": "Build styles.css with matching aesthetic & colors", "status": "pending"},
-                {"id": 4, "text": "Add interactive features & finalize deliverable", "status": "pending"}
-            ],
-            "all_done": False
-        }
-        try:
-            with open(todo_file, "w", encoding="utf-8") as tf:
-                json.dump(initial_todos, tf, indent=2)
-        except Exception:
-            pass
-        broadcast_todo_state(initial_todos)
-
-        design_attachment_section = (
-            f"\nATTACHED VISUAL DESIGN / SCREENSHOT REFERENCE: '{orig_name}'\n"
-            f"Image File Path: '{design_image_path.replace('\\', '/')}'\n"
-            f"{blueprint_md}"
-            "CRITICAL VISUAL CLONING INSTRUCTIONS:\n"
-            "An image and pre-computed visual blueprint have been attached.\n"
-            "- Recreate this exact design faithfully in clean, modern, responsive HTML, CSS, and JS.\n"
-            "- Apply the extracted color palette, typography font pairings, and layout hierarchy.\n"
-            "- Place the resulting website files in the target directory (e.g. on Desktop if requested).\n"
-        )
-    else:
-        broadcast_todo_state({
-            "title": short_title,
-            "model": "DeepSeek V4.1",
-            "status": "Generating To-Do checklist...",
-            "todos": [
-                {"id": 1, "text": "Analyzing task & generating action plan...", "status": "in_progress"}
-            ],
-            "all_done": False
-        })
-
-    prompt = (
-        "You are Casper's dedicated background system engineer powered by DeepSeek V4.1 Flash via OpenCode CLI.\n"
-        f"Your working directory is: '{workspace_dir}'. User's Desktop: '{desktop_dir}'.\n\n"
-        "MANDATORY PROTOCOL:\n"
-        "1. LIVE TO-DO CHECKLIST: Before taking any action, you MUST create a 'todo.json' file in your current directory with 3-5 clear tasks:\n"
-        '   Format:\n'
-        '   {\n'
-        f'     "title": "{short_title}",\n'
-        '     "model": "DeepSeek V4.1",\n'
-        '     "todos": [\n'
-        '       {"id": 1, "text": "Task description 1", "status": "in_progress"},\n'
-        '       {"id": 2, "text": "Task description 2", "status": "pending"}\n'
-        '     ],\n'
-        '     "all_done": false\n'
-        '   }\n'
-        "   As you complete each step, update 'todo.json' by changing status to 'done' and the next to 'in_progress'.\n"
-        "2. FULL EXECUTION: Write complete code files, modern HTML/CSS/JS web pages, automation scripts, or folder structures directly.\n"
-        "3. When finished, set all statuses to 'done', set 'all_done': true in 'todo.json', and summarize what was accomplished.\n\n"
-        f"{design_attachment_section}\n"
-        f"USER TASK INSTRUCTION:\n{task_instruction}\n"
-    )
-
-    prompt_file = os.path.join(WORKER_WORKSPACE, "task_prompt.md")
-    with open(prompt_file, "w", encoding="utf-8") as f:
-        f.write(prompt)
-
-    opencode_bin = shutil.which("opencode")
-    if not opencode_bin:
-        appdata_npm = os.path.join(os.environ.get("APPDATA", ""), "npm", "opencode.cmd")
-        if os.path.exists(appdata_npm):
-            opencode_bin = appdata_npm
-        else:
-            opencode_bin = "opencode"
-
-    args = [
-        opencode_bin, "run", "--standalone", "--auto",
-        "--model", model_id,
-        "--file", prompt_file,
-        f"Execute the task in {prompt_file} immediately. First write todo.json, update it live, and perform all actions directly."
-    ]
-
-    logger.info(f"Spawning OpenCode worker with model: {model_id} using {opencode_bin}")
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=WORKER_WORKSPACE,
-        stdin=subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    global _current_worker_proc
-    _current_worker_proc = proc
-
-    stop_watcher = asyncio.Event()
-
-    async def watch_todo():
-        last_seen = ""
-        while not stop_watcher.is_set():
-            if os.path.exists(todo_file):
-                try:
-                    with open(todo_file, "r", encoding="utf-8") as f:
-                        raw = f.read().strip()
-                    if raw and raw != last_seen:
-                        last_seen = raw
-                        data = json.loads(raw)
-                        for item in data.get("todos", []):
-                            t = item.get("text") or item.get("task") or "Task"
-                            item["text"] = t
-                            item["task"] = t
-                        broadcast_todo_state(data)
-                except Exception:
-                    pass
-            await asyncio.sleep(0.35)
-
-    watcher_task = asyncio.create_task(watch_todo())
-
-    timeout_seconds = int(os.getenv("OPENCODE_TIMEOUT", "480"))
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-    except (asyncio.TimeoutError, TimeoutError):
-        logger.warning(f"OpenCode DeepSeek task timed out after {timeout_seconds} seconds. Terminating process tree and falling back to Gemini...")
-        try:
-            # On Windows, kill entire process tree so node.exe / opencode.exe are not left orphaned
-            subprocess.run(f"taskkill /pid {proc.pid} /T /F", shell=True, capture_output=True)
-        except Exception as e:
-            logger.warning(f"Failed to taskkill opencode tree: {e}")
-        try:
-            proc.kill()
-        except Exception:
-            pass
-        return await run_gemini_worker_task(task_instruction, blueprint=blueprint)
-    finally:
-        _current_worker_proc = None
-        stop_watcher.set()
-        await watcher_task
-
-    out_text = stdout.decode("utf-8", errors="replace").strip()
-    stderr_text = stderr.decode("utf-8", errors="replace").strip()
-
-    if proc.returncode != 0:
-        logger.warning(f"OpenCode returned non-zero code {proc.returncode}. Stderr: {stderr_text}. Falling back to Gemini...")
-        return await run_gemini_worker_task(task_instruction, blueprint=blueprint)
-
-    if os.path.exists(todo_file):
-        try:
-            with open(todo_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            for item in data.get("todos", []):
-                item["status"] = "done"
-            data["all_done"] = True
-            data["status"] = "All tasks completed!"
-            broadcast_todo_state(data)
-        except Exception:
-            pass
-    else:
-        broadcast_todo_state({
-            "title": short_title,
-            "model": "DeepSeek V4.1",
-            "status": "All tasks completed!",
-            "todos": [
-                {"id": 1, "text": "Task executed successfully", "status": "done"}
-            ],
-            "all_done": True
-        })
-
-    clean_lines = [
-        line for line in out_text.splitlines()
-        if not line.strip().startswith("> build")
-    ]
-    result = "\n".join(clean_lines).strip()
-    return result if result else out_text
-
-async def run_gemini_worker_task(task_instruction: str, blueprint: dict = None) -> str:
-    """Worker implementation using Google Gemini as fallback."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key) if api_key else genai.Client()
-    model_id = "gemini-3.5-flash-lite"
-
-    desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop").replace("\\", "/")
-    workspace_dir = WORKER_WORKSPACE.replace("\\", "/")
-
-    blueprint_instructions = ""
-    if blueprint:
-        blueprint_instructions = (
-            f"\nVISUAL DESIGN BLUEPRINT TO CLONE (EXACT COLORS & STRUCTURE):\n"
-            f"```json\n{json.dumps(blueprint, indent=2)}\n```\n"
-            "Build the complete, polished website using the exact color palette, typography font pairings, and layout from this blueprint.\n"
-        )
-
-    broadcast_todo_state({
-        "title": "Building Website (Gemini)",
-        "model": "Gemini 3.5 Flash",
-        "status": "Generating code & writing files...",
-        "todos": [
-            {"id": 1, "text": "Visual design blueprint ready", "status": "done"},
-            {"id": 2, "text": "Writing index.html, styles.css & assets", "status": "in_progress"},
-            {"id": 3, "text": "Finalizing responsive styling & interactions", "status": "pending"}
-        ],
-        "all_done": False
-    })
-
-    chat = client.chats.create(
-        model=model_id,
-        config=types.GenerateContentConfig(
-            tools=[create_directory, delete_file_or_dir, read_file, write_file, list_dir, run_python_script, open_in_notepad],
-            system_instruction=(
-                "You are Casper's dedicated background worker agent. "
-                "Your job is to perform local system tasks like folder creation, file management, "
-                "deep file inspection, and writing/running complex scripts.\n"
-                f"- User's Desktop directory is: '{desktop_dir}'\n"
-                f"- Your dedicated workspace directory is: '{workspace_dir}'\n"
-                f"{blueprint_instructions}"
-                "RULES:\n"
-                "1. DIRECT TOOLS FIRST: For basic folder and file operations (creating folders, deleting, listing), "
-                "ALWAYS use `create_directory`, `delete_file_or_dir`, and `list_dir` directly. "
-                "DO NOT write python scripts just to create or delete directories.\n"
-                "2. SCRIPTS & CODE: When the user asks you to write code/scripts or you need Python for multi-step logic, "
-                "save them in your dedicated workspace (`worker_workspace/`) unless the user explicitly specified a location like Desktop. "
-                "Relative filenames automatically save inside your workspace.\n"
-                "3. IN-PLACE EDITING: When asked to edit, update, fix, or modify an existing file, "
-                "ALWAYS overwrite the EXACT existing file path with write_file.\n"
-                "4. When finished, clearly summarize what you did and where any files were saved."
-            ),
-            temperature=0.2,
-        )
-    )
-    logger.info(f"Worker agent starting Gemini task: {task_instruction}")
-    response = await asyncio.to_thread(chat.send_message, task_instruction)
-    logger.info("Worker agent finished task.")
-
-    broadcast_todo_state({
-        "title": "Task Completed",
-        "model": "Gemini 3.5 Flash",
-        "status": "All tasks finished!",
-        "todos": [
-            {"id": 1, "text": "Visual design blueprint ready", "status": "done"},
-            {"id": 2, "text": "Writing index.html, styles.css & assets", "status": "done"},
-            {"id": 3, "text": "Finalizing responsive styling & interactions", "status": "done"}
-        ],
-        "all_done": True
-    })
-    return response.text
-
-async def _execute_worker_job(task_instruction: str):
-    global _current_worker_task
-    try:
-        async with _worker_lock:
-            worker_engine = os.getenv("WORKER_ENGINE", "opencode").lower()
-
-            # 1. Try DeepSeek V4.1 Flash via OpenCode by default
-            if worker_engine in ("opencode", "deepseek", "auto"):
-                try:
-                    logger.info(f"Worker agent executing task via DeepSeek V4.1 Flash (OpenCode): {task_instruction}")
-                    res = await run_opencode_task(task_instruction)
-                    if res:
-                        speak_text("The background task is complete, Boss. Your files are ready.")
-                        return res
-                except asyncio.CancelledError:
-                    logger.info("Worker task cancelled during OpenCode execution.")
-                    raise
-                except Exception as e:
-                    logger.warning(f"OpenCode DeepSeek execution failed ({e}), falling back to Gemini...")
-
-            # 2. Fallback to Gemini
-            try:
-                res = await run_gemini_worker_task(task_instruction)
-                speak_text("The background task is complete, Boss. Your files are ready.")
-                return res
-            except asyncio.CancelledError:
-                logger.info("Worker task cancelled during Gemini execution.")
-                raise
-            except Exception as e:
-                logger.error(f"Worker agent failed: {e}")
-                return f"The background task encountered an error: {e}"
-    except asyncio.CancelledError:
-        logger.info("Background worker job cancelled by user command.")
-    finally:
-        _current_worker_task = None
-
-@function_tool()
-async def delegate_heavy_task(
-    context: RunContext,  # type: ignore
-    task_instruction: str) -> str:
-    """
-    Spins up Casper's dedicated background worker agent (powered by DeepSeek V4.1 Flash via OpenCode)
-    to build websites or scaffold brand new applications from scratch.
-    ONLY use this tool when the user asks to:
-    - Build, create, code, or clone a new website, web page, or 3D web experience from scratch (e.g. 'Build an AI portfolio website').
-    - Scaffold an entirely new multi-file application from scratch.
-    CRITICAL: NEVER use this tool for fixing code, debugging errors, finding bugs, or editing files in VS Code / IDE.
-    For all code debugging and bug fixing, ALWAYS use `fix_code_in_ide`.
-    """
-    global _current_worker_task
-    if _worker_lock.locked():
-        logger.warning(f"Worker is already busy with an active task: {task_instruction}")
-        return "I am already actively building that project for you on your system, Boss. The background worker is running right now—please allow it a moment to finish."
-
-    short_title = task_instruction.strip()
-    if len(short_title) > 36:
-        short_title = short_title[:33] + "..."
-
-    # Immediately pop open the To-Do checklist on screen so user gets instant visual confirmation
-    broadcast_todo_state({
-        "title": short_title,
-        "model": "DeepSeek V4.1",
-        "status": "Starting background worker...",
-        "todos": [
-            {"id": 1, "text": "Analyzing request & setting up workspace...", "status": "in_progress"},
-            {"id": 2, "text": "Building website files & styles...", "status": "pending"},
-            {"id": 3, "text": "Finalizing deliverables...", "status": "pending"}
-        ],
-        "all_done": False
-    })
-
-    # Run the worker asynchronously in the background so Casper replies immediately without blocking speech
-    _current_worker_task = asyncio.create_task(_execute_worker_job(task_instruction))
-
-    return "I have initiated the background worker to build this project for you right now, Boss. The live progress steps are displayed on your Dynamic Island."
+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
+exCeroPwKQ==
+-----END CASPER ENCRYPTED FILE-----

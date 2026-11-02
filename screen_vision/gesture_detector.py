@@ -1,228 +1,145 @@
-import time
-import math
-import socket
-import json
-import logging
-import threading
-import ctypes
-from collections import deque
-from typing import Optional, Tuple, List
-from PIL import Image, ImageGrab
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-from .visual_memory import set_focused_region
-
-# Ensure Windows DPI awareness so cursor coordinates match screen pixels 1:1
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2) # Per-monitor DPI aware
-except Exception:
-    try:
-        ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
-        pass
-
-class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
-
-def _get_cursor_pos() -> Tuple[int, int]:
-    pt = POINT()
-    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-    return int(pt.x), int(pt.y)
-
-
-def _check_circle_geometry(points: List[Tuple[int, int]]) -> Tuple[bool, Optional[Tuple[int, int, int, int]]]:
-    """
-    Evaluates whether a list of sequential points forms a deliberate closed circular loop.
-    Returns (is_circle, (min_x, min_y, max_x, max_y)).
-    """
-    if len(points) < 18:
-        return False, None
-
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    w = max_x - min_x
-    h = max_y - min_y
-
-    # Diameter bounds (between 70px and 850px)
-    if w < 70 or h < 70 or w > 850 or h > 850:
-        return False, None
-
-    # Aspect ratio check: roughly circular or elliptical
-    aspect = w / h if h != 0 else 0
-    if aspect < 0.38 or aspect > 2.6:
-        return False, None
-
-    # Closure check: start and end points must terminate near each other
-    start_p = points[0]
-    end_p = points[-1]
-    closure_dist = math.hypot(end_p[0] - start_p[0], end_p[1] - start_p[1])
-    if closure_dist > 0.45 * max(w, h):
-        return False, None
-
-    # Centroid of the gesture
-    cx = sum(xs) / len(xs)
-    cy = sum(ys) / len(ys)
-
-    # Calculate cumulative angular sweep around centroid
-    angles = [math.atan2(p[1] - cy, p[0] - cx) for p in points]
-    deltas = []
-    total_angle = 0.0
-
-    for i in range(1, len(angles)):
-        d = angles[i] - angles[i - 1]
-        while d > math.pi:
-            d -= 2 * math.pi
-        while d < -math.pi:
-            d += 2 * math.pi
-        deltas.append(d)
-        total_angle += d
-
-    # Must complete at least ~280 degrees in a single dominant direction
-    if abs(total_angle) < (math.pi * 1.55):
-        return False, None
-
-    # Rotational direction consistency check (rules out jitter/zigzags)
-    positive_count = sum(1 for d in deltas if d > 0.02)
-    negative_count = sum(1 for d in deltas if d < -0.02)
-    dom_count = max(positive_count, negative_count)
-
-    if dom_count < 0.65 * len(deltas):
-        return False, None
-
-    return True, (int(min_x), int(min_y), int(max_x), int(max_y))
-
-
-_global_gesture_detector: Optional['CircleGestureDetector'] = None
-
-def get_gesture_detector() -> Optional['CircleGestureDetector']:
-    return _global_gesture_detector
-
-class CircleGestureDetector:
-    """
-    Background worker that monitors cursor motion and detects intentional
-    circular gestures around objects or text on screen with zero keyboard interaction.
-    Operates on-demand when Vision Mode is engaged.
-    """
-
-    def __init__(self, udp_port: int = 49152):
-        global _global_gesture_detector
-        self._running = False
-        self._enabled = False
-        self._thread: Optional[threading.Thread] = None
-        self._points = deque(maxlen=85)
-        self._last_trigger_time = 0.0
-        self._cooldown_seconds = 1.4
-        self._udp_port = udp_port
-        _global_gesture_detector = self
-
-    def enable(self):
-        """Enables cursor tracking and gesture evaluation."""
-        self._enabled = True
-        logging.info("[Gesture Detector] Circle gesture tracking ACTIVATED")
-
-    def disable(self):
-        """Pauses gesture tracking (0% CPU)."""
-        self._enabled = False
-        self._points.clear()
-        logging.info("[Gesture Detector] Circle gesture tracking DEACTIVATED (dormant)")
-
-    @property
-    def is_enabled(self) -> bool:
-        return self._enabled
-
-    def start(self):
-        if self._running:
-            return
-        self._running = True
-        self._thread = threading.Thread(target=self._run_loop, name="CasperGestureDetector", daemon=True)
-        self._thread.start()
-        logging.info("[Gesture Detector] Background gesture worker started (dormant by default)")
-
-    def stop(self):
-        self._running = False
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
-        logging.info("[Gesture Detector] Gesture tracking stopped")
-
-    def _broadcast_circle_event(self, bbox: Tuple[int, int, int, int]):
-        """Notifies the Electron/PySide transparent overlay to draw a holographic pulse."""
-        try:
-            min_x, min_y, max_x, max_y = bbox
-            payload = json.dumps({
-                "x": min_x,
-                "y": min_y,
-                "w": max_x - min_x,
-                "h": max_y - min_y
-            })
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.sendto(f"CIRCLE:{payload}".encode("utf-8"), ("127.0.0.1", self._udp_port))
-            sock.close()
-        except Exception as e:
-            logging.debug(f"[Gesture Detector] UDP broadcast error: {e}")
-
-    def _capture_and_store_crop(self, bbox: Tuple[int, int, int, int]):
-        """Crops the focused region at 100% native resolution and stores it in VisualMemory."""
-        min_x, min_y, max_x, max_y = bbox
-        try:
-            # Add small 20px padding around the circled area
-            pad = 20
-            crop_box = (
-                max(0, min_x - pad),
-                max(0, min_y - pad),
-                max_x + pad,
-                max_y + pad
-            )
-            # Use ImageGrab to capture the exact native pixels
-            cropped_img = ImageGrab.grab(bbox=crop_box)
-            set_focused_region(bbox, cropped_img)
-            self._broadcast_circle_event(bbox)
-        except Exception as e:
-            logging.warning(f"[Gesture Detector] Failed to crop focused area: {e}")
-
-    def _run_loop(self):
-        last_eval_time = 0.0
-
-        while self._running:
-            if not self._enabled:
-                time.sleep(0.1)
-                continue
-
-            time.sleep(0.018)  # ~55 Hz polling rate for smooth trajectory sampling
-            try:
-                pos = _get_cursor_pos()
-                self._points.append(pos)
-
-                now = time.time()
-                # Run evaluation every ~50ms if cooldown expired
-                if now - self._last_trigger_time < self._cooldown_seconds:
-                    continue
-
-                if now - last_eval_time < 0.05:
-                    continue
-
-                last_eval_time = now
-
-                # Evaluate varying window lengths (between 22 and 75 samples)
-                n = len(self._points)
-                pts_list = list(self._points)
-
-                for length in range(22, min(n, 75), 4):
-                    sub = pts_list[-length:]
-                    is_circle, bbox = _check_circle_geometry(sub)
-                    if is_circle and bbox:
-                        self._last_trigger_time = now
-                        logging.info(f"[Gesture Detector] Deliberate circle detected at {bbox}!")
-                        # Capture crop asynchronously in separate thread so tracking doesn't stutter
-                        threading.Thread(
-                            target=self._capture_and_store_crop,
-                            args=(bbox,),
-                            daemon=True
-                        ).start()
-                        self._points.clear()
-                        break
-
-            except Exception as e:
-                # Keep loop resilient
-                pass
+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
+rgqUmJgau97frAles8ae11UQHaKkp5BTD04=
+-----END CASPER ENCRYPTED FILE-----

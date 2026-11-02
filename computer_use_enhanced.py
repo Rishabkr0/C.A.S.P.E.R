@@ -1,451 +1,315 @@
-"""
-Enhanced computer use with Chrome MCP integration
-Routes browser tasks to Chrome MCP for faster, more reliable automation
-"""
-
-import logging
-import asyncio
-from typing import Optional
-
-# Import existing functions
-from computer_use_original import (
-    normalize_app_name,
-    get_running_app_names_and_titles,
-    is_target_matched,
-    launch_app,
-    _spotify_find_window,
-    _spotify_pixel_scan_play,
-)
-
-logger = logging.getLogger("computer_use_enhanced")
-
-import re
-
-# Common sites for general browser navigation
-COMMON_SITES = {
-    "google": "https://www.google.com",
-    "youtube": "https://www.youtube.com",
-    "gmail": "https://mail.google.com",
-    "spotify": "https://open.spotify.com",
-    "twitter": "https://twitter.com",
-    "facebook": "https://www.facebook.com",
-    "linkedin": "https://www.linkedin.com",
-    "instagram": "https://www.instagram.com",
-    "reddit": "https://www.reddit.com",
-    "github": "https://github.com",
-    "netflix": "https://www.netflix.com",
-    "amazon": "https://www.amazon.com",
-}
-
-# Chrome tools will be imported after initialization
-chrome_tools = None
-
-
-def set_chrome_tools(tools_module):
-    """Set the Chrome tools module"""
-    global chrome_tools
-    chrome_tools = tools_module
-
-
-def is_browser_task(task: str) -> bool:
-    """Determine if a task should use Chrome automation"""
-    task_lower = task.lower()
-
-    # Fast-path: YouTube ad skip is ALWAYS a browser task even without "youtube" keyword
-    if "skip" in task_lower and "ad" in task_lower:
-        return True
-
-    browser_keywords = [
-        "youtube", "tube", "spotify web", "gmail", "email", "search",
-        "google", "website", "web page", "browser", "chrome",
-        "open.spotify.com", "mail.google.com", "twitter",
-        "facebook", "linkedin", "instagram", "reddit",
-        "netflix", "prime video", "amazon", "flipkart",
-        "shopping", "form", "login", "sign in",
-        "tab", "tabs", "cookie", "cookies", "block ads",
-        "extension", "extensions", "monitor",
-    ]
-
-    # Check if it's specifically for Spotify desktop app
-    if "spotify" in task_lower and "app" in task_lower:
-        return False
-
-    return any(keyword in task_lower for keyword in browser_keywords)
-
-
-async def handle_youtube_task(task: str) -> str:
-    """Handle YouTube-specific tasks using Chrome MCP"""
-    if not chrome_tools:
-        return "Chrome automation not available"
-
-    task_lower = task.lower()
-
-    try:
-        # Skip ad
-        if "skip" in task_lower and "ad" in task_lower:
-            return await chrome_tools.youtube_skip_ad(None)
-
-        # Volume controls (check before play/pause to avoid conflicts)
-        if "volume up" in task_lower or "increase volume" in task_lower:
-            return await chrome_tools.youtube_volume_up(None)
-        if "volume down" in task_lower or "decrease volume" in task_lower:
-            return await chrome_tools.youtube_volume_down(None)
-        if "volume" in task_lower and ("set" in task_lower or any(char.isdigit() for char in task_lower)):
-            # Extract volume number
-            match = re.search(r'\d+', task_lower)
-            if match:
-                volume = int(match.group())
-                return await chrome_tools.youtube_set_volume(None, volume)
-
-        # Skip forward/backward
-        if "skip forward" in task_lower or "forward" in task_lower:
-            match = re.search(r'\d+', task_lower)
-            seconds = int(match.group()) if match else 10
-            return await chrome_tools.youtube_skip_forward(None, seconds)
-        if "skip backward" in task_lower or "backward" in task_lower or "rewind" in task_lower:
-            match = re.search(r'\d+', task_lower)
-            seconds = int(match.group()) if match else 10
-            return await chrome_tools.youtube_skip_backward(None, seconds)
-
-        # Playback speed
-        if "speed" in task_lower:
-            match = re.search(r'(\d+\.?\d*)', task_lower)
-            if match:
-                speed = float(match.group())
-                return await chrome_tools.youtube_set_playback_speed(None, speed)
-
-        # Quality
-        if "quality" in task_lower or "resolution" in task_lower or "1080p" in task_lower or "720p" in task_lower or "480p" in task_lower or "1440p" in task_lower or "4k" in task_lower or "2160p" in task_lower or "360p" in task_lower or "240p" in task_lower or "144p" in task_lower:
-            match = re.search(r'(144p|240p|360p|480p|720p|1080p|1440p|2160p|4k|auto)', task_lower)
-            if match:
-                quality = match.group(1)
-                if quality == '4k': quality = '2160p'
-                return await chrome_tools.youtube_set_quality(None, quality)
-
-
-        # Playback control - check for pause/play BEFORE searching
-        if task_lower in ["pause", "pause video", "pause the video", "pause this", "pause it"]:
-            return await chrome_tools.youtube_control_playback(None, "pause")
-        if task_lower in ["play", "play video", "play the video", "resume", "continue"]:
-            return await chrome_tools.youtube_control_playback(None, "play")
-
-        # Mute/unmute
-        if "mute" in task_lower and "unmute" not in task_lower:
-            return await chrome_tools.youtube_control_playback(None, "mute")
-        if "unmute" in task_lower:
-            return await chrome_tools.youtube_control_playback(None, "unmute")
-
-        # Fullscreen
-        if "fullscreen" in task_lower or "full screen" in task_lower:
-            return await chrome_tools.youtube_control_playback(None, "fullscreen")
-
-        # Theater mode
-        if "theater" in task_lower:
-            return await chrome_tools.youtube_toggle_theater_mode(None)
-
-        # Picture in picture
-        if "picture" in task_lower or "pip" in task_lower:
-            return await chrome_tools.youtube_toggle_picture_in_picture(None)
-
-        # Next/Previous video
-        if "next video" in task_lower or "next" in task_lower:
-            return await chrome_tools.youtube_next_video(None)
-        if "previous video" in task_lower or "previous" in task_lower or "last video" in task_lower:
-            return await chrome_tools.youtube_previous_video(None)
-
-        # Replay
-        if "replay" in task_lower or "restart" in task_lower:
-            return await chrome_tools.youtube_replay_video(None)
-
-        # Get info
-        if "info" in task_lower or "information" in task_lower:
-            return await chrome_tools.youtube_get_video_info(None)
-
-        # Search (show results, don't auto-play) - must NOT contain "play"
-        if ("search" in task_lower or "find" in task_lower or "look for" in task_lower or "show me" in task_lower) and "play" not in task_lower:
-            # Extract query
-            query = task_lower
-            for word in ["search", "find", "look for", "show me", "show", "on youtube", "youtube", "for", "results", "videos of", "videos about"]:
-                query = query.replace(word, "")
-            query = query.strip()
-            if query:
-                return await chrome_tools.youtube_search(None, query)
-
-        # Play video (auto-play first result) - only if contains "play"
-        if "play" in task_lower:
-            ordinal_map = {
-                "first": 1, "1st": 1,
-                "second": 2, "2nd": 2,
-                "third": 3, "3rd": 3,
-                "fourth": 4, "4th": 4,
-                "fifth": 5, "5th": 5,
-                "sixth": 6, "6th": 6
-            }
-            
-            for word, index in ordinal_map.items():
-                if f"{word} video" in task_lower or f"the {word} video" in task_lower or task_lower.strip() in [f"play {word}", f"play the {word}"]:
-                    return await chrome_tools.youtube_play_nth_video(None, index)
-                
-            # Extract query
-            query = task_lower.replace("play", "")
-            query = query.replace("on youtube", "").replace("youtube", "").strip()
-            if query:
-                return await chrome_tools.youtube_play_video(None, query)
-
-        return "YouTube task not recognized"
-
-    except Exception as e:
-        logger.error(f"YouTube task failed: {e}")
-        return f"Failed to complete YouTube task: {str(e)}"
-
-
-async def handle_spotify_web_task(task: str) -> str:
-    """Handle Spotify Web Player tasks using Chrome MCP"""
-    if not chrome_tools:
-        return "Chrome automation not available"
-
-    task_lower = task.lower()
-
-    try:
-        # Play song/artist
-        if "play" in task_lower or "search" in task_lower:
-            query = task_lower.replace("play", "").replace("search", "")
-            query = query.replace("on spotify", "").replace("spotify", "").strip()
-            if query:
-                return await chrome_tools.spotify_play_song(None, query)
-
-        # Playback control
-        if "pause" in task_lower or "stop" in task_lower:
-            return await chrome_tools.spotify_control(None, "pause")
-        if "next" in task_lower or "skip" in task_lower:
-            return await chrome_tools.spotify_control(None, "next")
-        if "previous" in task_lower or "back" in task_lower:
-            return await chrome_tools.spotify_control(None, "previous")
-        if "like" in task_lower or "save" in task_lower:
-            return await chrome_tools.spotify_control(None, "like")
-
-        return "Spotify task not recognized"
-
-    except Exception as e:
-        logger.error(f"Spotify task failed: {e}")
-        return f"Failed to complete Spotify task: {str(e)}"
-
-
-async def handle_gmail_task(task: str) -> str:
-    """Handle Gmail tasks using Chrome MCP"""
-    if not chrome_tools:
-        return "Chrome automation not available"
-
-    task_lower = task.lower()
-
-    try:
-        # Read emails
-        if "read" in task_lower or "check" in task_lower or "show" in task_lower:
-            filter_type = "unread"
-            if "starred" in task_lower:
-                filter_type = "starred"
-            elif "all" in task_lower:
-                filter_type = "all"
-
-            return await chrome_tools.gmail_read_emails(None, filter_type)
-
-        # Open Gmail
-        return await chrome_tools.chrome_navigate(None, "https://mail.google.com")
-
-    except Exception as e:
-        logger.error(f"Gmail task failed: {e}")
-        return f"Failed to complete Gmail task: {str(e)}"
-
-
-async def handle_web_search_task(task: str) -> str:
-    """Handle web search tasks using Chrome MCP"""
-    if not chrome_tools:
-        return "Chrome automation not available"
-
-    task_lower = task.lower()
-
-    try:
-        # Extract search query
-        query = task_lower
-        for word in ["search", "google", "find", "look up", "for"]:
-            query = query.replace(word, "")
-        query = query.strip()
-
-        # Determine search engine
-        engine = "google"
-        if "bing" in task_lower:
-            engine = "bing"
-        elif "duckduckgo" in task_lower:
-            engine = "duckduckgo"
-
-        if query:
-            return await chrome_tools.web_search(None, query, engine)
-
-        return "No search query provided"
-
-    except Exception as e:
-        logger.error(f"Web search failed: {e}")
-        return f"Failed to search: {str(e)}"
-
-async def handle_advanced_browser_task(task: str) -> str:
-    """Handle advanced Chrome tasks like tabs, cookies, extensions"""
-    if not chrome_tools:
-        return "Chrome automation not available"
-
-    task_lower = task.lower()
-
-    try:
-        # Tabs
-        if "list tabs" in task_lower or "show tabs" in task_lower or "open tabs" in task_lower:
-            return await chrome_tools.chrome_list_tabs(None)
-        if "close other tabs" in task_lower:
-            return await chrome_tools.chrome_close_other_tabs(None)
-        if "switch to tab" in task_lower or "go to tab" in task_lower:
-            match = re.search(r'tab\s+([a-zA-Z0-9_]+)', task_lower)
-            if match:
-                return await chrome_tools.chrome_switch_tab(None, match.group(1))
-            return "Please provide the tab ID"
-
-        # Cookies
-        if "clear cookies" in task_lower or "delete cookies" in task_lower:
-            return await chrome_tools.chrome_clear_cookies(None)
-        if "get cookies" in task_lower or "show cookies" in task_lower:
-            return await chrome_tools.chrome_get_cookies(None)
-
-        # Network filters
-        if "block ads" in task_lower or "block ad" in task_lower:
-            return await chrome_tools.chrome_set_network_filters(None, "*doubleclick.net*,*googleadservices.com*,*googlesyndication.com*")
-        
-        # Extensions
-        if "extension" in task_lower or "extensions" in task_lower:
-            return await chrome_tools.chrome_manage_extensions(None, "open")
-
-        return "Advanced task not recognized"
-
-    except Exception as e:
-        logger.error(f"Advanced browser task failed: {e}")
-        return f"Failed to complete advanced task: {str(e)}"
-
-
-async def handle_general_browser_task(task: str) -> str:
-    """Handle general browser navigation tasks"""
-    if not chrome_tools:
-        return "Chrome automation not available"
-
-    task_lower = task.lower()
-
-    try:
-        # Extract URL or website name
-        if "open" in task_lower:
-            for site, url in COMMON_SITES.items():
-                if site in task_lower:
-                    return await chrome_tools.chrome_navigate(None, url)
-
-            # Try to extract URL
-            words = task_lower.split()
-            for word in words:
-                if "." in word and not word.startswith("."):
-                    url = word if word.startswith("http") else f"https://{word}"
-                    return await chrome_tools.chrome_navigate(None, url)
-
-        return "Could not determine website to open"
-
-    except Exception as e:
-        logger.error(f"Browser task failed: {e}")
-        return f"Failed to complete browser task: {str(e)}"
-
-
-async def chrome_automation(task: str) -> str:
-    """
-    Route browser tasks to appropriate Chrome MCP handler
-
-    Args:
-        task: The task description
-
-    Returns:
-        Result message
-    """
-    if not chrome_tools:
-        logger.warning("Chrome tools not available, falling back to traditional automation")
-        raise Exception("Chrome tools not initialized")
-
-    task_lower = task.lower()
-
-    # Route to specific handlers
-    if "youtube" in task_lower:
-        return await handle_youtube_task(task)
-
-    if "spotify" in task_lower and "web" not in task_lower:
-        # Prefer web player for better reliability
-        return await handle_spotify_web_task(task)
-
-    if "gmail" in task_lower or "email" in task_lower:
-        return await handle_gmail_task(task)
-
-    if "search" in task_lower or "google" in task_lower:
-        return await handle_web_search_task(task)
-
-    if any(k in task_lower for k in ["tab", "tabs", "cookie", "cookies", "block ads", "extension", "extensions", "monitor"]):
-        result = await handle_advanced_browser_task(task)
-        if result != "Advanced task not recognized":
-            return result
-
-    # General browser navigation
-    return await handle_general_browser_task(task)
-
-
-# Import original computer_use_loop for fallback
-async def computer_use_loop_original(task: str, max_steps: int = 15) -> str:
-    """Original computer use loop - imported from computer_use.py"""
-    # This will be the original implementation
-    from computer_use_original import computer_use_loop as original_loop
-    return await original_loop(task, max_steps)
-
-
-async def computer_use_loop(task: str, max_steps: int = 15) -> str:
-    """
-    Enhanced computer use loop with Chrome MCP integration
-
-    Priority:
-    1. Chrome MCP for browser tasks (fastest, most reliable)
-    2. Original UIA + Vision fallback for desktop apps
-
-    Args:
-        task: The task to accomplish
-        max_steps: Maximum automation steps
-
-    Returns:
-        Task result message
-    """
-    task_lower = task.lower().strip()
-
-    # Check if this is a browser task and Chrome is available
-    if is_browser_task(task_lower) and chrome_tools:
-        try:
-            logger.info(f"Routing browser task to Chrome MCP: {task}")
-            result = await chrome_automation(task_lower)
-
-            # If Chrome automation succeeded, return result
-            if "not available" not in result.lower() and "failed" not in result.lower():
-                return result
-
-            logger.info("Chrome MCP failed, falling back to original automation")
-
-        except Exception as e:
-            logger.warning(f"Chrome automation failed: {e}, falling back to original")
-
-    # Check if this is an IDE / Code inspection or fixing task
-    ide_keywords = ["vscode", "vs code", "code", "ide", "editor", "bug", "syntax", "error on line", "fix the code", "fix bug", "line number", "antigravity"]
-    action_keywords = ["fix", "bug", "error", "inspect", "check", "edit", "correct", "line", "what's wrong", "why is this"]
-    if any(k in task_lower for k in ide_keywords) and any(k in task_lower for k in action_keywords):
-        try:
-            import ide_control
-            logger.info(f"Routing code inspection/fix task to IDE control: {task}")
-            return await ide_control.inspect_and_fix_code(task)
-        except Exception as e:
-            logger.warning(f"IDE control routing failed ({e}), falling back...")
-
-    # Fall back to original computer use loop
-    logger.info(f"Using original automation for: {task}")
-    from computer_use_original import computer_use_loop as original_loop
-    return await original_loop(task, max_steps)
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+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
+cQi7x5FJRi3U
+-----END CASPER ENCRYPTED FILE-----

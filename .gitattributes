@@ -1,1 +1,16 @@
 bin/*.exe filter=lfs diff=lfs merge=lfs -text
+
+# Casper-Crypt: Zero-Trust Transparent AES-256-GCM Git Encryption
+casper_crypt.py -filter -diff
+README.md -filter -diff
+LICENSE.md -filter -diff
+requirements.txt -filter -diff
+.gitattributes -filter -diff
+.gitignore -filter -diff
+
+*.py filter=casper-crypt diff=casper-crypt
+*.html filter=casper-crypt diff=casper-crypt
+*.js filter=casper-crypt diff=casper-crypt
+*.css filter=casper-crypt diff=casper-crypt
+*.json filter=casper-crypt diff=casper-crypt
+*.spec filter=casper-crypt diff=casper-crypt

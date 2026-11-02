@@ -1,440 +1,267 @@
-/**
- * CASPER DOM Agent & Ghost Cursor Engine
- * Injected into Chrome tabs to provide:
- * 1. Set-of-Marks interactive element detection with numeric badges
- * 2. Visual Ghost Cursor with smooth Bézier glide and click ripple animations
- * 3. Human-like interaction (click, type, hover, scroll)
- */
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-(function () {
-  if (window.__casperAgent) {
-    return; // Already initialized
-  }
-
-  class CasperDOMAgent {
-    constructor() {
-      this.elementsMap = new Map();
-      this.cursor = null;
-      this.badgeContainer = null;
-      this.currentX = window.innerWidth / 2;
-      this.currentY = window.innerHeight / 2;
-      this.isMoving = false;
-      this.initOverlay();
-    }
-
-    initOverlay() {
-      // 1. Root Container
-      let host = document.getElementById("__casper_overlay_root__");
-      if (!host) {
-        host = document.createElement("div");
-        host.id = "__casper_overlay_root__";
-        host.style.cssText = "all: initial; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483640;";
-        document.documentElement.appendChild(host);
-      }
-
-      // 2. Inject CSS Styles
-      let style = document.getElementById("__casper_styles__");
-      if (!style) {
-        style = document.createElement("style");
-        style.id = "__casper_styles__";
-        style.textContent = `
-          .casper-ghost-cursor {
-            position: fixed;
-            width: 28px;
-            height: 28px;
-            pointer-events: none;
-            z-index: 2147483647;
-            transform: translate(-3px, -2px);
-            transition: left 0.38s cubic-bezier(0.22, 1, 0.36, 1), top 0.38s cubic-bezier(0.22, 1, 0.36, 1);
-            filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.85)) drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-          }
-          .casper-ghost-cursor svg {
-            width: 100%;
-            height: 100%;
-          }
-          .casper-cursor-label {
-            position: absolute;
-            left: 24px;
-            top: 14px;
-            background: rgba(10, 20, 35, 0.9);
-            color: #00e5ff;
-            border: 1px solid rgba(0, 229, 255, 0.6);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-size: 11px;
-            font-weight: 600;
-            padding: 2px 7px;
-            border-radius: 4px;
-            white-space: nowrap;
-            box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
-            opacity: 0;
-            transition: opacity 0.2s ease;
-          }
-          .casper-click-ripple {
-            position: fixed;
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            border: 2px solid #00e5ff;
-            background: rgba(0, 229, 255, 0.3);
-            pointer-events: none;
-            z-index: 2147483646;
-            transform: translate(-50%, -50%) scale(0.2);
-            animation: casper_ripple_anim 0.55s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
-          }
-          @keyframes casper_ripple_anim {
-            0% {
-              transform: translate(-50%, -50%) scale(0.2);
-              opacity: 1;
-              box-shadow: 0 0 12px #00e5ff;
-            }
-            100% {
-              transform: translate(-50%, -50%) scale(3.5);
-              opacity: 0;
-              box-shadow: 0 0 2px #00e5ff;
-            }
-          }
-          .casper-som-badge {
-            position: absolute;
-            background: linear-gradient(135deg, #00e5ff 0%, #0099ff 100%);
-            color: #050e1a;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-            font-size: 11px;
-            font-weight: 800;
-            padding: 1px 6px;
-            border-radius: 4px;
-            pointer-events: none;
-            z-index: 2147483645;
-            box-shadow: 0 0 8px rgba(0, 229, 255, 0.7), 0 2px 4px rgba(0,0,0,0.6);
-            border: 1px solid #ffffff;
-            transform: translateY(-50%);
-            white-space: nowrap;
-          }
-          .casper-som-highlight {
-            outline: 2px solid #00e5ff !important;
-            outline-offset: 2px !important;
-            box-shadow: 0 0 10px rgba(0, 229, 255, 0.4) !important;
-          }
-        `;
-        document.documentElement.appendChild(style);
-      }
-
-      // 3. Ghost Cursor Element
-      let cursor = document.getElementById("__casper_cursor__");
-      if (!cursor) {
-        cursor = document.createElement("div");
-        cursor.id = "__casper_cursor__";
-        cursor.className = "casper-ghost-cursor";
-        cursor.style.left = `${this.currentX}px`;
-        cursor.style.top = `${this.currentY}px`;
-        cursor.innerHTML = `
-          <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M4 3L12 23L16 14.5L24.5 10.5L4 3Z" fill="#00e5ff" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round"/>
-            <circle cx="15.5" cy="14.5" r="2" fill="#ffffff"/>
-          </svg>
-          <div class="casper-cursor-label" id="__casper_cursor_label__">CASPER</div>
-        `;
-        host.appendChild(cursor);
-      }
-      this.cursor = cursor;
-
-      // 4. Badges Container
-      let badges = document.getElementById("__casper_badges__");
-      if (!badges) {
-        badges = document.createElement("div");
-        badges.id = "__casper_badges__";
-        host.appendChild(badges);
-      }
-      this.badgeContainer = badges;
-    }
-
-    setCursorLabel(text) {
-      const label = document.getElementById("__casper_cursor_label__");
-      if (label) {
-        if (text) {
-          label.textContent = text;
-          label.style.opacity = "1";
-        } else {
-          label.style.opacity = "0";
-        }
-      }
-    }
-
-    async moveCursorTo(x, y, label = null) {
-      this.initOverlay();
-      this.setCursorLabel(label);
-      this.cursor.style.left = `${x}px`;
-      this.cursor.style.top = `${y}px`;
-      this.currentX = x;
-      this.currentY = y;
-      // Wait for CSS glide transition to finish
-      await new Promise(r => setTimeout(r, 400));
-    }
-
-    playClickEffect(x, y) {
-      const ripple = document.createElement("div");
-      ripple.className = "casper-click-ripple";
-      ripple.style.left = `${x}px`;
-      ripple.style.top = `${y}px`;
-      document.getElementById("__casper_overlay_root__").appendChild(ripple);
-      setTimeout(() => ripple.remove(), 600);
-    }
-
-    clearBadges() {
-      if (this.badgeContainer) {
-        this.badgeContainer.innerHTML = "";
-      }
-      document.querySelectorAll(".casper-som-highlight").forEach(el => {
-        el.classList.remove("casper-som-highlight");
-      });
-      this.setCursorLabel(null);
-    }
-
-    /**
-     * Scan the page for interactive elements and optionally render Set-of-Marks badges.
-     */
-    scanInteractiveElements(options = { showBadges: false, maxElements: 75 }) {
-      this.initOverlay();
-      this.clearBadges();
-      this.elementsMap.clear();
-
-      const candidates = Array.from(document.querySelectorAll(
-        "a[href], button, input, textarea, select, details, summary, " +
-        "[role='button'], [role='link'], [role='checkbox'], [role='radio'], " +
-        "[role='tab'], [role='menuitem'], [role='searchbox'], [role='switch'], " +
-        "[tabindex]:not([tabindex='-1']), [onclick]"
-      ));
-
-      // Also detect elements with CSS cursor: pointer
-      const allDivsSpans = document.querySelectorAll("div, span, li, p");
-      for (let i = 0; i < Math.min(allDivsSpans.length, 300); i++) {
-        const el = allDivsSpans[i];
-        if (!candidates.includes(el)) {
-          const style = window.getComputedStyle(el);
-          if (style.cursor === "pointer" && el.children.length <= 2) {
-            candidates.push(el);
-          }
-        }
-      }
-
-      const results = [];
-      let index = 1;
-
-      for (const el of candidates) {
-        if (index > options.maxElements) break;
-
-        // Skip children if parent button/link is already captured
-        const parentCandidate = el.parentElement ? el.parentElement.closest("button, a[href]") : null;
-        if (parentCandidate && parentCandidate !== el && candidates.includes(parentCandidate)) {
-          continue;
-        }
-
-        const rect = el.getBoundingClientRect();
-        // Check visibility in viewport
-        if (rect.width < 6 || rect.height < 6) continue;
-        if (
-          rect.bottom <= 0 ||
-          rect.top >= window.innerHeight ||
-          rect.right <= 0 ||
-          rect.left >= window.innerWidth
-        ) {
-          continue;
-        }
-
-        const style = window.getComputedStyle(el);
-        if (
-          style.display === "none" ||
-          style.visibility === "hidden" ||
-          parseFloat(style.opacity) < 0.1 ||
-          style.pointerEvents === "none"
-        ) {
-          continue;
-        }
-
-        // Extract semantic text label
-        let label = (
-          el.getAttribute("aria-label") ||
-          el.innerText ||
-          el.placeholder ||
-          el.title ||
-          el.value ||
-          el.getAttribute("name") ||
-          el.getAttribute("id") ||
-          ""
-        ).trim().replace(/\s+/g, " ");
-
-        // Truncate long labels
-        if (label.length > 50) label = label.slice(0, 47) + "...";
-
-        // Determine tag/type
-        let role = el.getAttribute("role") || el.tagName.toLowerCase();
-        if (el.tagName.toLowerCase() === "input") {
-          role = `input:${el.type || "text"}`;
-        }
-
-        const centerX = Math.round(rect.left + rect.width / 2);
-        const centerY = Math.round(rect.top + rect.height / 2);
-
-        const item = {
-          id: index,
-          role: role,
-          label: label || `[${role}]`,
-          x: centerX,
-          y: centerY,
-          rect: {
-            top: Math.round(rect.top),
-            left: Math.round(rect.left),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
-          }
-        };
-
-        this.elementsMap.set(index, el);
-        results.push(item);
-
-        // Render badge
-        if (options.showBadges && this.badgeContainer) {
-          const badge = document.createElement("div");
-          badge.className = "casper-som-badge";
-          badge.textContent = `${index}`;
-          // Position at top-left of the element
-          const badgeTop = Math.max(4, rect.top + window.scrollY);
-          const badgeLeft = Math.max(4, rect.left + window.scrollX);
-          badge.style.top = `${badgeTop}px`;
-          badge.style.left = `${badgeLeft}px`;
-          this.badgeContainer.appendChild(badge);
-        }
-
-        index++;
-      }
-
-      return results;
-    }
-
-    /**
-     * Interactively click an element by its Set-of-Marks ID
-     */
-    async clickElementById(id) {
-      this.initOverlay();
-      const el = this.elementsMap.get(Number(id));
-      if (!el) {
-        return { success: false, error: `Element with ID ${id} not found. Try scanning the page first.` };
-      }
-
-      // 1. Scroll into view if needed
-      el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-      await new Promise(r => setTimeout(r, 250));
-
-      const rect = el.getBoundingClientRect();
-      const x = Math.round(rect.left + rect.width / 2);
-      const y = Math.round(rect.top + rect.height / 2);
-
-      // 2. Glide Casper Ghost Cursor to element
-      await this.moveCursorTo(x, y, "Clicking...");
-
-      // 3. Highlight element briefly
-      el.classList.add("casper-som-highlight");
-      this.playClickEffect(x, y);
-
-      // 4. Dispatch standard browser mouse events for framework compatibility
-      el.focus();
-      const mousedown = new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window });
-      const mouseup = new MouseEvent("mouseup", { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window });
-      const click = new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window });
-
-      el.dispatchEvent(mousedown);
-      el.dispatchEvent(mouseup);
-      el.click();
-      el.dispatchEvent(click);
-
-      setTimeout(() => {
-        el.classList.remove("casper-som-highlight");
-        this.setCursorLabel(null);
-      }, 500);
-
-      return {
-        success: true,
-        id: id,
-        x: x,
-        y: y,
-        label: el.innerText || el.getAttribute("aria-label") || el.tagName
-      };
-    }
-
-    /**
-     * Type text into an element by its ID
-     */
-    async typeElementById(id, text, clearFirst = true) {
-      this.initOverlay();
-      const el = this.elementsMap.get(Number(id));
-      if (!el) {
-        return { success: false, error: `Element with ID ${id} not found.` };
-      }
-
-      el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-      await new Promise(r => setTimeout(r, 200));
-
-      const rect = el.getBoundingClientRect();
-      const x = Math.round(rect.left + rect.width / 2);
-      const y = Math.round(rect.top + rect.height / 2);
-
-      await this.moveCursorTo(x, y, "Typing...");
-      this.playClickEffect(x, y);
-
-      el.focus();
-      if (clearFirst) {
-        if ("value" in el) el.value = "";
-        else if (el.isContentEditable) el.textContent = "";
-      }
-
-      // React / Vue property descriptor bypass
-      const isInput = el instanceof HTMLInputElement;
-      const isTextArea = el instanceof HTMLTextAreaElement;
-
-      if (isInput || isTextArea) {
-        const proto = isInput ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-        const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
-        if (descriptor && descriptor.set) {
-          descriptor.set.call(el, text);
-        } else {
-          el.value = text;
-        }
-      } else if (el.isContentEditable) {
-        el.textContent = text;
-      }
-
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-
-      setTimeout(() => this.setCursorLabel(null), 400);
-
-      return {
-        success: true,
-        id: id,
-        typed: text
-      };
-    }
-
-    /**
-     * Move cursor to arbitrary coordinates and click
-     */
-    async clickCoordinates(x, y) {
-      this.initOverlay();
-      await this.moveCursorTo(x, y, "Clicking...");
-      this.playClickEffect(x, y);
-
-      const target = document.elementFromPoint(x, y);
-      if (target) {
-        target.focus();
-        target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
-        target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
-        target.click();
-      }
-
-      setTimeout(() => this.setCursorLabel(null), 400);
-      return { success: true, x, y };
-    }
-  }
-
-  window.__casperAgent = new CasperDOMAgent();
-})();
-
+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
+07HsCZ04F1oNVg==
+-----END CASPER ENCRYPTED FILE-----

@@ -1,206 +1,147 @@
-import time
-import io
-import os
-import base64
-import logging
-import asyncio
-from typing import Optional, Tuple, Dict, Any
-from PIL import Image
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-_active_focus: Optional[Dict[str, Any]] = None
-_cached_genai_client = None
-
-def _get_genai_client(api_key: str):
-    global _cached_genai_client
-    if _cached_genai_client is None:
-        from google import genai
-        _cached_genai_client = genai.Client(api_key=api_key)
-    return _cached_genai_client
-
-def set_focused_region(
-    bbox: Tuple[int, int, int, int],
-    image: Image.Image,
-    text_hint: str = ""
-) -> None:
-    """
-    Stores the most recently circled screen region into visual working memory.
-    bbox is (min_x, min_y, max_x, max_y).
-    """
-    global _active_focus
-    try:
-        img_buffer = io.BytesIO()
-        rgb_img = image.convert("RGB")
-        # Ensure crop is not unnecessarily massive while preserving crisp legibility
-        if rgb_img.width > 900 or rgb_img.height > 900:
-            rgb_img.thumbnail((900, 900), Image.Resampling.BILINEAR)
-        rgb_img.save(img_buffer, format="JPEG", quality=80)
-        img_bytes = img_buffer.getvalue()
-
-        _active_focus = {
-            "bbox": bbox,
-            "width": rgb_img.width,
-            "height": rgb_img.height,
-            "image_bytes": img_bytes,
-            "timestamp": time.time(),
-            "text_hint": text_hint
-        }
-        logging.info(
-            f"[Visual Memory] Saved active focus bbox={bbox} ({rgb_img.width}x{rgb_img.height}) at {time.strftime('%X')}"
-        )
-    except Exception as e:
-        logging.error(f"[Visual Memory] Failed to store focused region: {e}")
-
-def get_active_focus(max_age_seconds: float = 30.0) -> Optional[Dict[str, Any]]:
-    """
-    Returns the active visual focus if it was captured within the last max_age_seconds.
-    """
-    global _active_focus
-    if not _active_focus:
-        return None
-    
-    age = time.time() - _active_focus.get("timestamp", 0)
-    if age <= max_age_seconds:
-        return _active_focus
-    return None
-
-def _capture_screen() -> Optional[Image.Image]:
-    """Capture the active desktop with multiple fallback mechanisms."""
-    try:
-        from PIL import ImageGrab
-        return ImageGrab.grab()
-    except Exception as e:
-        logging.debug(f"[Visual Memory] ImageGrab failed ({e}), trying mss fallback...")
-
-    try:
-        import mss
-        with mss.MSS() as sct:
-            mon = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-            sct_img = sct.grab(mon)
-            return Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-    except Exception as e2:
-        logging.error(f"[Visual Memory] Screen capture failed across all providers: {e2}")
-        return None
-
-async def inspect_focused_image(question: str = "") -> str:
-    """
-    Captures the user's active desktop screen in high resolution and sends it
-    to Gemini Vision to answer the user's question with full screen context.
-    """
-    img_bytes = None
-    context_prefix = ""
-
-    # Primary: Capture Full Screen in High Definition
-    try:
-        import ctypes
-
-        # Get current mouse cursor position on screen
-        class _POINT(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-        pt = _POINT()
-        ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-        cursor_pos = (int(pt.x), int(pt.y))
-
-        screenshot = _capture_screen()
-        if screenshot:
-            orig_w, orig_h = screenshot.size
-            img_buffer = io.BytesIO()
-            rgb_img = screenshot.convert("RGB")
-
-            # Scale preserving aspect ratio up to 1600px for sharp text & code readability
-            if rgb_img.width > 1600 or rgb_img.height > 1200:
-                rgb_img.thumbnail((1600, 1200), Image.Resampling.BILINEAR)
-
-            rgb_img.save(img_buffer, format="JPEG", quality=85)
-            img_bytes = img_buffer.getvalue()
-
-            context_prefix = (
-                f"This is the user's full active desktop screen (original resolution: {orig_w}x{orig_h}). "
-                f"The user's mouse cursor is currently positioned at ({cursor_pos[0]}, {cursor_pos[1]}).\n"
-            )
-    except Exception as e:
-        logging.error(f"[Visual Memory] Full screen capture processing error: {e}")
-
-    # Fallback to cached focused crop if full screen was unavailable
-    if not img_bytes:
-        focus = get_active_focus(max_age_seconds=15.0)
-        if focus:
-            img_bytes = focus["image_bytes"]
-            context_prefix = "Cached focused crop.\n"
-
-    if not img_bytes:
-        return "I was unable to capture your screen, Boss. Please make sure the window is visible."
-
-    prompt_text = (
-        f"{context_prefix}"
-        f"User query / context: {question if question else 'Explain what is shown here in detail and identify any errors, text, code, or notable elements.'}\n"
-        f"Respond articulately, concisely, and directly as Casper (the British JARVIS-style assistant). "
-        f"Get straight to the answer without generic preamble."
-    )
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "Visual inspection requires GEMINI_API_KEY to be configured in settings."
-
-    try:
-        from google.genai import types
-
-        client = _get_genai_client(api_key)
-        image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-
-        model_candidates = [
-            os.getenv("GEMINI_VISION_MODEL", "gemini-3-flash-preview"),
-            "gemini-3-flash-preview",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-        ]
-        unique_models = list(dict.fromkeys(model_candidates))
-
-        gen_config = types.GenerateContentConfig(temperature=0.2, max_output_tokens=300)
-
-        for model_name in unique_models:
-            try:
-                response = await asyncio.wait_for(
-                    client.aio.models.generate_content(
-                        model=model_name,
-                        contents=[prompt_text, image_part],
-                        config=gen_config
-                    ),
-                    timeout=4.5
-                )
-                if response and response.text:
-                    return response.text.strip()
-            except Exception as model_err:
-                logging.warning(f"[Visual Memory] Model {model_name} failed or timed out: {model_err}")
-                continue
-    except Exception as e:
-        logging.warning(f"[Visual Memory] Gemini vision direct call failed ({e}). Trying fallback...")
-
-    # Optional OpenRouter fallback if configured
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
-    if openrouter_key:
-        try:
-            import requests
-            b64_img = base64.b64encode(img_bytes).decode("utf-8")
-            headers = {"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"}
-            payload = {
-                "model": "google/gemini-2.0-flash-001",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
-                        ]
-                    }
-                ]
-            }
-            res = await asyncio.to_thread(
-                requests.post, "https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=5.0
-            )
-            data = res.json()
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"].strip()
-        except Exception as e2:
-            logging.error(f"[Visual Memory] OpenRouter vision fallback failed: {e2}")
-
-    return "I can see your active display, Boss, but the visual analysis encountered a brief delay. Please circle the specific item again or ask me directly."
+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
+-----END CASPER ENCRYPTED FILE-----

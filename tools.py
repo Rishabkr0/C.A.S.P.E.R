@@ -1,248 +1,157 @@
-import logging
-from livekit.agents import function_tool, RunContext
-import requests
-import os
-import smtplib
-from email.mime.multipart import MIMEMultipart  
-from email.mime.text import MIMEText
-from typing import Optional
-import media_player
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-@function_tool()
-async def get_weather(
-    context: RunContext,  # type: ignore
-    city: str) -> str:
-    """
-    Get the current weather for a given city.
-    """
-    try:
-        response = requests.get(
-            f"https://wttr.in/{city}?format=3")
-        if response.status_code == 200:
-            logging.info(f"Weather for {city}: {response.text.strip()}")
-            return response.text.strip()   
-        else:
-            logging.error(f"Failed to get weather for {city}: {response.status_code}")
-            return f"Could not retrieve weather for {city}."
-    except Exception as e:
-        logging.error(f"Error retrieving weather for {city}: {e}")
-        return f"An error occurred while retrieving weather for {city}." 
-
-@function_tool()
-async def search_web(
-    context: RunContext,  # type: ignore
-    query: str) -> str:
-    """
-    Search the web using DuckDuckGo and show results.
-    Uses ddgs (new package) with fallback to duckduckgo_search and langchain.
-    """
-    # Try direct ddgs first (most reliable, avoids langchain wrapper issues)
-    try:
-        from ddgs import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=8))
-            if results:
-                formatted = []
-                for i, r in enumerate(results, 1):
-                    title = r.get("title", "No title")
-                    body = r.get("body", "")[:220]
-                    href = r.get("href", "")
-                    formatted.append(f"{i}. {title}\n   {body}\n   {href}")
-                text = "\n\n".join(formatted)
-                logging.info(f"search_web ddgs results for '{query}': {text[:500]}")
-                return text
-    except Exception as e:
-        logging.warning(f"ddgs direct search failed ({e}), trying fallback")
-
-    # Fallback 2: duckduckgo_search legacy
-    try:
-        from duckduckgo_search import DDGS as LegacyDDGS
-        with LegacyDDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=8))
-            if results:
-                formatted = []
-                for i, r in enumerate(results, 1):
-                    title = r.get("title", "No title")
-                    body = r.get("body", "")[:220]
-                    href = r.get("href", "")
-                    formatted.append(f"{i}. {title}\n   {body}\n   {href}")
-                text = "\n\n".join(formatted)
-                logging.info(f"search_web legacy DDGS for '{query}': {text[:500]}")
-                return text
-    except Exception as e:
-        logging.warning(f"legacy DDGS failed ({e}), trying langchain")
-
-    # Fallback 3: langchain wrapper
-    try:
-        from langchain_community.tools import DuckDuckGoSearchRun
-        results = DuckDuckGoSearchRun().run(tool_input=query)
-        logging.info(f"Search results for '{query}': {results}")
-        return results
-    except Exception as e:
-        logging.error(f"Error searching the web for '{query}': {e}")
-        return f"An error occurred while searching the web for '{query}': {e}. Try using control_computer to search via Chrome."    
-
-@function_tool()    
-async def send_email(
-    context: RunContext,  # type: ignore
-    to_email: str,
-    subject: str,
-    message: str,
-    cc_email: Optional[str] = None
-) -> str:
-    """
-    Send an email through Gmail.
-    
-    Args:
-        to_email: Recipient email address
-        subject: Email subject line
-        message: Email body content
-        cc_email: Optional CC email address
-    """
-    try:
-        # Gmail SMTP configuration
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-        
-        # Get credentials from environment variables
-        gmail_user = os.getenv("GMAIL_USER")
-        gmail_password = os.getenv("GMAIL_APP_PASSWORD")  # Use App Password, not regular password
-        
-        if not gmail_user or not gmail_password:
-            logging.error("Gmail credentials not found in environment variables")
-            return "Email sending failed: Gmail credentials not configured."
-        
-        # Create message
-        msg = MIMEMultipart()
-        msg['From'] = gmail_user
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        
-        # Add CC if provided
-        recipients = [to_email]
-        if cc_email:
-            msg['Cc'] = cc_email
-            recipients.append(cc_email)
-        
-        # Attach message body
-        msg.attach(MIMEText(message, 'plain'))
-        
-        # Connect to Gmail SMTP server
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()  # Enable TLS encryption
-        server.login(gmail_user, gmail_password)
-        
-        # Send email
-        text = msg.as_string()
-        server.sendmail(gmail_user, recipients, text)
-        server.quit()
-        
-        logging.info(f"Email sent successfully to {to_email}")
-        return f"Email sent successfully to {to_email}"
-        
-    except smtplib.SMTPAuthenticationError:
-        logging.error("Gmail authentication failed")
-        return "Email sending failed: Authentication error. Please check your Gmail credentials."
-    except smtplib.SMTPException as e:
-        logging.error(f"SMTP error occurred: {e}")
-        return f"Email sending failed: SMTP error - {str(e)}"
-    except Exception as e:
-        logging.error(f"Error sending email: {e}")
-        return f"An error occurred while sending email: {str(e)}"
-
-@function_tool()
-async def play_music(
-    context: RunContext,  # type: ignore
-    song_name: str) -> str:
-    """
-    Search and play a song invisibly in the background. Use this tool by default for playing music, instead of the Chrome MCP browser, unless the user explicitly asks to open Spotify or YouTube in the browser.
-    """
-    logging.info(f"play_music called for '{song_name}'")
-    return media_player.play_song(song_name)
-
-@function_tool()
-async def stop_music(
-    context: RunContext  # type: ignore
-) -> str:
-    """
-    Stop the currently playing background music.
-    """
-    logging.info("stop_music called")
-    return media_player.stop_song()
-
-@function_tool()
-async def add_to_queue(
-    context: RunContext,  # type: ignore
-    song_name: str) -> str:
-    """
-    Add a song to the music playback queue.
-    """
-    return media_player.add_to_queue(song_name)
-
-@function_tool()
-async def skip_song(
-    context: RunContext  # type: ignore
-) -> str:
-    """
-    Skip the currently playing song to play the next one in the queue.
-    """
-    return media_player.skip_song()
-
-@function_tool()
-async def get_queue(
-    context: RunContext  # type: ignore
-) -> str:
-    """
-    Get the current music playback queue.
-    """
-    return media_player.get_queue()
-
-@function_tool()
-async def set_music_volume(
-    context: RunContext,  # type: ignore
-    level: int) -> str:
-    """
-    Set the volume of the background music player (0 to 100).
-    """
-    return media_player.set_music_volume(level)
-
-@function_tool()
-async def seek_song(
-    context: RunContext,  # type: ignore
-    seconds: int) -> str:
-    """
-    Seek or jump to a specific timestamp in the currently playing song (in seconds).
-    Examples:
-    - seconds=60 to jump to 1 minute into the song
-    - seconds=120 to jump to 2 minutes into the song
-    """
-    return media_player.seek_song(seconds)
-
-@function_tool()
-async def play_obsidian_playlist(
-    context: RunContext,  # type: ignore
-    note_name: str) -> str:
-    """
-    Read a playlist from an Obsidian note and add all songs in it to the music queue.
-    """
-    import os
-    from obsidian_tools import _get_note_path
-    
-    file_path = _get_note_path(note_name)
-    if not os.path.exists(file_path):
-        return f"Error: Playlist note '{note_name}' does not exist in the vault."
-        
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            
-        songs_added = 0
-        for line in lines:
-            song = line.strip().lstrip("-").strip()
-            if song and not song.startswith("#"):
-                media_player.add_to_queue(song)
-                songs_added += 1
-                
-        return f"Successfully read playlist '{note_name}'. Added {songs_added} songs to the queue."
-    except Exception as e:
-        return f"Failed to read playlist '{note_name}': {str(e)}"
+rMUrgJmj/8pO+ALm9QwY6RUk9sOdUrJZVs4b4jjoTtJ96pBuOzy40PRxt2WGagrWPmvzMA8uL8wx
+mT9XHjhYSByASjuzFy2u7B9vCnc2YjumGIqdaVQvEZ0SD1Q8vOQG4gFZ3B09vOsNna04Jto7h8Jz
+sEqTe0yuQnRdovbyICary8IIquEEhNLmXv0GfdpPqaQES9jBAAv5ZVXVB++MwP2wIQkYTDNR5XPB
+rzN2A306r2ME940nIvxZ9oqjpRFh2UIQj1XvfBHiFGCdXryn+aBlZEkvCtTp44licK4YyK/fOldH
+fxiDjO2qyA+VUkRg6dqmDEzULF9VuWs59xp0gjDD0orSASwXa9+ThKM1TwTZcgEwPVChvIPzwm/7
+APLP+CiS8/ZiJt6iEI5gjo3qKm6qUKwsko3NXW0VfN/FQQZ8oqVI5aMZFlSdUJ4DGY8hQqV2psMN
+iB3tsnSyzyKMaRmCUTeZk/WPnMHscPpSo9oT/jJkbKuCxe0+rd03bLkcZP/zgSMWE9n+8X+mA/lr
+qld8S7M5JhIHwlMVL1ukYIjGcHCrUaFnwP7KjFeyCTnubaG3v3K31wieU1XQo6VbOgIIa0b4km++
+i6/rJcvDL91ZKeo3+DTHCNuJXWDgmTTzr/WlS4z4LDQHRtiv2vbk+krGRg17DGYNUjZMBumTuIRs
+M8DM9DMaEPIz8Rvuz0erNfkg2dPFOvQ4nwtQDlSJEbYshv43MlEC0iLPvP9vPC8D5bGEbQBSd1tD
+Iru7OZRyxbL6pJCB7L/7XQWIAdDH8m8Nl5TkL/HETQTSrDRWpl3LAYGEn/sabsZVODkRK4upgrEb
+Crhgf1ZmEJCBku/0zlwJi7ucLKJtEuwvVxZxl7QopYD9VKpssdrkDJdB0P3X0WEUBM3TnBHJkoo5
+gSHgS1ll3mIKITCW9cGX7IGMyCwEkhPOSoIC2jcHtXBK3ZGgUV7OtLSonyyHI8OqJjezDMWeshwj
+Y1mUqSBJUuYrvGQKbQxiko7lZKCBT/vmHNrdH0i+FqEokn6eMop38vFdi1nvANBG6vddtvDRuERa
+ZQ5B9ACUxwFbr9OSyT8H9Fz4sBdjZub8y0szrV58TwprMlMOTz6hhcpFXL4z61yc5k7/yHnbS71w
+6VuNZx5SGeGvfvXpyIlHsww/1IVvlyBAXqbDU3/GVF42Qo85z7QnkyyFSjruXhBEePP+0iFoUWig
+K4OPaPKXzwrz/zEHHt1ZmGOss5hg+Ro5zsv2xHYdwPOg/P4AH+Ig7asik+gNltlqXVXehfieg5g+
++TLxNgJjhCWA6WL0IeWMYgCuWoChyTWFjkNb2LQh/fY7wWRrxh4jQ4X+VZn9WDbHD0vyROqv5Qx4
+R37GlvKsocy7OyW+PdHsw4Tft63H8ezJJrkA076KSEPO/gTeKrRHo4ta778zX/rrOCxl0QIIMo9p
+bXxfm0O3+SNz13edj6H1VIRgtCoi0mecsnobo9SJLlKcdHGO6PB4MJjijbgU5FdeJJjxbNzcAh7h
+hKldh/ewMYKFseXzQXxdHA0cMLiDhHX9NBRrylCyIRNtsA0xVq91Z/9j7brDaFPWJXJ3jtO1Ybok
+m9q/Dq2hEEH7MtCmP+s2hyHcZi8PE4eJJW5o4yBhnrECRXfOb/Yp56f19OkokU0wFRgkY4l9kneW
+7ZLySB9NVCQLBdb3g7+8gM71muJFiEvz+on0uKqIWP+zdE3pt8pXV809suHZC/HL7/+aBIuB7Orh
+iUwWH2S16Quy8tD01sSlYR/RHt+jO19z1vWSpeK6BLZSSQt2srnBQrXbDY2RBpcLTPSiLWYGWFuK
+L4P00ZsX3/IW2ePk78d2xPtLrPjWbY8Zs4Phb/cTs7MEU5MJZ6dBMPstL8AsmMUJrXj7/h29bcnS
+KfOPmJbIZdhYA5H12Q7+FSmHkQ6pQS9hyCMwtWNXPvpFWLTKrlxS5zEABPaIOTeQYfCqzOO55Tyk
+/GvcVsQg1J/J+OdnNBvWU1bG/OS78W3DJ64dqMyFXUdqwHS+FVmq6uHeXX29vrsCQSqxxZ/4gIKu
+oyzNu7IWTvDW29pYmClMC1vVHS8Wd2Fnc7ZSoyvYKkxzf3p93JaAdtVgJxzGYrppssnrnXHuL/CJ
+PfGP2+obwpjfq13QXwMbanLZOYVkzCHofx2oRIZ/Hzzum/gZxFu7Hv7OZHDwFPmgpCh0fCzuFUw9
+nbK8XZvtmvF6FRSirGkUOUlEHW4u+SGeivz34zrLnOec7T4F9Vp+du9TeuAAzUjJKRGRCbBHDNsM
+trcpyjz5o/mUTS0WwZXMtUirmeEi6jgBzecB13yyzKcIxULA7uwoB11Cf3XNE6SQS8shub1FFNzC
+kU8NM7jpFQ/p9NxpozzSfZvBx9ALm2FK1Mcfi6YSbu2lYIlMBb7h2wROnGwzKObYcG18r+zY+dA4
+4WaOowtRgtAWG18yBDtrEIC009wVG9sirSFkLBJfa8luFDhFsG5BDRQB6A91sWIY5yhFbbVIxk8W
+IantaJ/noI2ymyqwhkBXTA9LlOn8l8eajvV1cnXM9ojMsmF+IkKcns2/Z85u1EJOdg1kSipt8QEV
+Z22uFJNqwK0fE9OyTQ3H5PnmmkxTag9cdFxen4CPJ40Ywh1G1Ji1+DqqgVbXpEqlV0hq1BND/rcZ
+pas74wCEyTKD4WeQ9e4I94CQjdEIg+7POd/1zuV1L7TjRaUerTOtqKa4QBhoDrarp5CR3a7mzJ8d
+TsRCoEi28kCCwJq6SZRHO5LMs86APTB5Kbq/Hv7755g958i5deuW1S/XNgnMZLbhhBp02Tf+HLPc
+jJg+A88y0tJRhZGrSqqPX3AOz1XfUPjpQqX4BLYa27GZ8L+sw1jjOY/bsYsimEyIydgySJ8tdCaD
+TBdA9Ps3YP9HCiMqUn5Y/bGNy9ODUcIP6eNXQep+KVhZhRJjRSeiom8dwgTEDOEO+4b1hMtPzHmz
+mNaFuPuOW/XNl+JWGqBsG82NrD7lihqMRjQMp3JZTChtG3zR+QZDK7HfRDUvb5txdj/iQrN1o+4S
+Z554h9ReZz586ESspVEVHeEg1ATAHy1QxVAY2iTZ6hC2hJ7ZpXsB+PsRuxLR09Tf4zPVEEvgqr4L
+FLkI5GtLRh2y1OdUHclsQXCR8Knl4BhLJqWXldPE7LbHomJTMF1Ekq7q1SuLezAFVbEOfV4gsAc0
+4xD4/b5N8PSU4RfiUC1Xo8Wqmv4foDtYvpACZ62PlvNpWqIGkEOK2g5CZYtUzzvXViWPwdgA+5Ef
+/KgTR6yHyhvdX8mBusoeGlDr3nCoo9SSYej27AEFq4++kfDoCAOca8ygoeEnZQYLyIxmGFYVMcMB
+B+MH7j/FNOYYRETevortK8PTBSqIYApaAM+RKroLbkjIWLNeFwJcWnrqTFIldypPQOKss9WD3SOz
+jwU/z/BYIcH3+TLb/VtGAWLzM1hGspbfTMOpLCT/RyyhVvKSfDHkmhDfPG76CWvlL6YLcII48wEo
+k/VG8cXp3MSA7ee9ZqYjyVRd2mhuM/XDo+9hw4vMGthdHjMjzuIkrVCf5WJD5y/B1gWqpJ7EI+K9
+mKyJeDl0/tH0/bcHU7WHHfUafi4g2YJheZ2S+tGw32fMfk7UdT1ymnG4m8vm1RW3GfOOpN1B0r+V
+Ig78/OOLljtldXwky9ROsh6SPOF11NPh1bZitrON+jvZ6LWhFpccvVL5IkHqPBtHnIGHX/7UEseF
+J2tblPWvTlpCp+kyJwBpc7rNEbiFp7bKv3N838WDMC0T6eKzGbgAU4Kf01BK7J0zRo48QnMa8eJu
+lg7xgKzTZj24YI7ux9TeDY+ZviXYMz4/d3l+CNE2zrwZHPLl9K9Y3z093XzySC3+DI6mifuw13LR
+ftQZi4xfpzdauDD10pkTrV+cQNEWuAAcExSX6C7/OatMoCaXMFVh5XbcruTFgTut8GBH1KG0Oln4
+TZLuXdemwh5q/ilo1Sy3gAjNgBxlgvrlD/xkOuLNJRmf5uRIq274/2pkJrR+7x/3Fsh2tnnEm0Eb
+XnVHF4tsFqiBujSDoiEOdSKjFLiIwWtVhpIQHYOJrzjSrl154Fd7n9f5A0temer6XjKEBy/VBQfk
+83+AVdEjuPxz07n+hY4eiQIKnhEgKeX0ZOi7gA5dbQ+4nXwyygTgISgxO3XrOK1Lct05CgbjDtEi
+snb3KOl3qtK4L+mYHMIBrQgxcMAWzB0wNi4tkE9hQf8cITqnGxKDCD/xtz8uZD24PPEPZifNq7/R
+M22+sAqPHEwJ2+GCmQ7qPFjxaGpwX584tdtPmNg27FaaDA2mgejxUi0H1OpEWfWDIbIKTwE6bsIV
+miR6wBmS+QXE8+IcEzAkzPqafd7wF6iM4whAxhI5F3rUGvoauWftxjJWhk3F7//3tD9LzwQdQqR9
+nhcYRYEtWHpNLDLgKxFL1CXhWDLoEUzBmRge8NmAwnDW7wWhTeOHor+P/ItzUhFN0O4B1N5FhZHh
+gryHDG1buff1rjHX1jEOe2zr40ywU0uwuxpS6KRveGiTsZ/BB1nf6VgSH5heA1Gc1fyeJqWyjsP2
+J7jexXumIYZMX9nTETmPmkaeYntGYspv/Qt/pnbMqX4BpP41rMJU0DB0aGvjSN/67iSsbM9XaA/b
+KB+kOYhh82h3Vx2N00k2gE99KLFUHJI3WlWzHfhz5jbuczP5WbkU8nclbgdc4+DHumKc503aZQpr
+wpu6OQrA7o/KwJEV4mHt+slwBFexuCFxU8Mk8wjWC/mgShXW6kMvhdQpom9CdovPX+BoepE84O9A
+J3TisyyHn2fD8/jIxvBj1qSfnmxstzjQDekIni94ianBoNsCrC2b1xrbzrbPSJaFANvEpxJDnehV
+I9fxURgeOnIGOUBZeK3ikPmPBb9qW81Pch/NrDEmmCo5xt8xqj9x4bWnH8U/VJjqLt2zGDDiOUZF
+bwrwzWZCA3FTDM3o/R0Os5rD7y0rXZmFNaxJP0Ng01t6KHNX4/2lgafWD7sv1Na8Gfn44gN4Tluz
+OjUvC/+xhSuI1Qr2oiOTmSjssorXgMfLxE9g8XOUh8hoxrCKPVqnPo2rppcAmaIxeZnKhnHlXTnG
+7CIHB3CHNVzdI3h8lT8YtSh1HbkD01jE/JPnCEnIjFQG6t5UmLfmdNvA+N34aasSNuDiVPPXp2fc
+biLpOwGl7Z0f0t8l5Ba1areJSrgvGfTuwS6kS+ACM64wC+GZrhGg285WWbV2DWaoTh+iPFfhWMbp
+5ECu2SBSd4mwEuzQh56KzntnhCJuTT91ufJmGvbvsEF9rUDPZ5bkbHnm6AwB3wMHP4O1yA0BbvLU
+K6hYTv6aNcZncJYH5esRKL8S8EqhsPX9oMnXGtn0OZLD+rC0UB75SvYbrVG7ZWdcMp18rFiHg+ZN
+Appg3jpUo1Xa/L3A5tz5HV4o2mmU3l5aLQTkzDaDGQsjHcGSMEUkUUWl6gPBq+a8PuoAggab6yDE
+M5R7cNjY/LkKAr6oyTso+f/Yab2bAWFUc7BCBBB+DWxC5erj/5xLVWA1AG9sGbFSKL7Cn02MMwDD
+Y/DupVW7pB5k9yBCRiYDYEzUuD1A/JrUv9roVratlmBYPttF3ovVoVfbpF4OV7Q6lGBgH8PmoE0n
+kwMEq7JiWpO43Bw2zhaFIwOsgE4uckmW0DPuY3ev7iprAa4RiEmViJw3XMOow2ZYETzJl5KhH6h4
+0GAYjwgmH+BmnYKmKiRTvSZJ7D70Ef1lzzpIRBu9YurVdrJnhfr8EIdnFslPu1/znY8yXRfdexiS
+qPDtARRVR+nKI8ltasgZy8/tlcB7oIrC4fkfYV7Ap4zTLnIq+RqgNGNKIXXDGDyAEqwHR42o7N9G
+uV4wS/019o786gZDQX7evASwDBGOcYFSuxmxCt069h7udxZKhXeD6BrXifVT0uI+XZARp34sU8ZZ
+q2Mnn+7NtY5befExS6oPm+bCU8736HABv1C11izk5khOp70LSaiSoExvQFF/i8D8jjDlUgl2mLZ4
+LROcM6B66YyAww4tAlzV+aypn63Ga+9el/0MH2ZbMUmzGuCsFk3lNEFrptByZo3PwRDVNuwrHV4B
+Y81MOMVu3wxSG2iR49mr72ETu/30M3GQUe88H5T32DQ7OjaISDQz1IjdfBbAOcckOQHbiY6YNxb3
+nPTozauhirkVFEk+Za5YnWVyIZo7znRE3s8emv7NZbdylUE8yziv2EA07kYyGIJhLhuDrT3cYcld
+P2WHNinB7Rqye/79MBS1Rc2Pf7S2uFBePJK8cXyhxIG8T5ASDnr5KkxbhPl9FBj0XMSmYO3q3HDV
+oZI2RvDkNOq0ovwTHsYQMfMpnw705Sh9WVfLcjEgKqvxKFJ3rcZAnhRTBoJvaLF82eFIL6JpoJCM
+Qks/i9jpWujfh8JPCvzs/ei/CzaJXPXsrNUyQFSTp4aBiakJdvC+BmrY4OtXL6aB0p4Ag0WxOfgN
+Y2PmlSMaglKsFJDeVI8rY4zB9/5sguP0r/Ls+GmRg/qETmUgpvcGLrmh/azc1IxnoZAvoeQapY9Q
+9C/85ytny5usbuasLB0y464ZoKn0UDy1S/HM6Y4YkO358UUEI+iKvQaUTQOT+58ST2WKggPHbUup
+DYEMUKqK/whH8PeJ1LyM7zKawh6CxnOSMzngWKbvntwnDSBLmFfUNmLw7lNyhz3neSKScVet/TTG
+IZuonEQPp9/LDJko3zHUzMG192xVJi7Zi41HjqWcVOV8UdaLXomXSPBfgFBbP4GIjLPb7UsZMkxm
+7Xee/8mDsfBPOrGBk/hOnt/fAMsMbGAkjY7Znhu+S8utziVzzaYVoo8LSBOYE5e0f7frgReB3dco
+lUvDw9BdMDiVsETBF2eMPnhdsaf0Xy+UWbmib8kAXmFGcmYQN7o1Pnr7OdBxy2FPmBpekzLGHLX3
+b5C2iyrmy08SyEDXXtEJZY9ri36IV6+fNjE17Rm/O1oB0GDCw390dK2uKefpV2otyXjEIYXIkHWb
+/q7R/wTIAoIGKymvCOlN8uG/AH9RIHGbCNSIp1EsGOx7NyHAcKytva+spkilFfp/czf4PrB9PbFZ
+teZXUPdxp8D6eTPUeIzLPGtKdActI8Soj61gBN08LbRAkhi5W0izEqKQcX5NljIC0xCbIDJXNjwW
+L2wxBzBTlZb2EQ8wjjv6uZyaEueg59Lq3dsmKtNIYwFKUIcd2N4nwYL3GfQRHpIEkYkfuw30fmA0
+n/F2GGQA5q8UAYbyJwqEMR7mtjeb0Vb2ccuSYT5HgOHehQQu4/VA+YjTV4g2WLHo4cUJ25SdIbDL
+kDUpxWR6b2t7vQpNc86perfCvLU4XRBCKf8N7vijUgzUN18vMP98DrSiwq1ABJ3ZvdzuARAUyYyP
+EogYkFJek0xng8RZe4dioJwJHTeofZDyr3cEiv5u1m4fRbnbqsaW9njurJ9slzwBDBBXMAlC14m8
+zcVgW++rknGVhk88SdqJ35q4gik9FzuaUMEcxUS2nKOIL9YlrHfhA36K2xiL75GYqP7oc0cDL/+s
+iaczuWSZK51gS0KdUCrGWDJs60gyYaq57UIBAsS8ncHq7/k9y+VAXiJz73gNDAfcjwW4qb8n1TH0
+xN4so10n4RyFdeGqCKCtVWSfvqpr/kqqMyLl1sPW7RbMPY1KgAmLbZlgcYh4Id7JovVsW1cgGPkL
+nhFNMx3GgTXlGQp1w8R6jENmoFNf1aHtSXwAkSeHVFiis0S53D7U1rrjO2+8URtD2JaQu35Vmg0E
+0zWPM8xeFvyK0NZPDPPf3ky3qo9FP8Semew5La4vdJ22BtZjSlMoV6PFPDOmgH+439hudoub1ky/
+3vSVGuDRPl7Dv47WYTTwHzS8FzKRsRvaCgX86c2FRy4DiWCnYxLVHqao9COVR8B10cXPYNK8cBYP
+DGofOxZzkEI+phsIcC1BtS2pbjVqd86GVNMZw4ABALUDwOkdkGR4Xcx/PmvKmGV68y5oJcCuc3VT
+dcVtp56YmIq/febKxQVGDOcW/d6nMYXIKCfyXCCrqAtm+Je1VuVqLnyR9FcojsWzgm0S5gnh2UUU
+fEpYzueFLnQD50tiWpLox1NyfKfPlutcNKddoR/Be3gyUpPZFCrpeb+4UI87ItwxD0aRhTfhkQAq
+URKkW8ye2bDCax6RRlLhWv0d4vOeZXKUQqpb67kb4hHZK/EygPdPXIvtca7nlt2YeifVu7lG1fu7
+kGtw4xrZqotnLwNlIxBT9Cvk0Z0fTXwonBkHxdkyDD60RiZKczivhagfQ2WIZOUx73dR26BI/XmZ
+Mf80+dlFF833QmzTkJY1IQCApA23LS8lbvRekTDrldIJM146KZMCH1vVJ/9Fapu+4DIoFm2mOfAr
+eoo5swOJtjGEOP2m0yhvrm8V2Ao4SazrL87jGlZ/+xXhdNiv6+shH6tp+z1t0RE1RSuAEo1wUZr6
+IB1CAY6aZ2LJ8wOFwTQk2xe7LBlzkvUL1AZn1C13hbg6XYQMk+wr8Tmhy9PPsIrdg4yrEMFY9nFw
+gLOjq4ZGQDWgGjM4D95qEl1qOESTpVKNGCOAirV27fezExafHmWvlUUBpMPH9Cb//Oct9hEtuAy4
+jKDv3oXV3pPG8IGKQYvEFBeiWBufBByltG5/tNARb1x/WN2E7EmpkBXWcVxWn8ZfeXovs5pcx7p8
+Uh00FGqVb2Ito64hTz4NZzNgKF58FFwlYODS1xuWL2OYKaxGxBw/hyIRaWzURAbvPPvu2tApKbPG
+2DaHQb1SDfZPPBlDB7zEXyyvIF9LtqGNwPRstRlt9LU+T6KFY4WkNBbSHwt/GEDvmaLUYxF1vdBO
+vLBDGk8EEFoySThmGEZ+Ff36LRIomvXLni/lrLIMTpYzdRvttlncvEzBFAf4fWZxCqCiZJtKvtqa
+GgOuZ9nrzt+Bm7Wg58iToz8NZmmOxMJ61UyFCRWUl4DknEkSai34Wsr5wbUK3GBVnlOopLaOUTFp
+NwRcCGLnl3My6n92c1fAhZvdZ+YPyy70VLce/FHrQdHbRMeFINK5ggCWRIUynbpPNCw7/nP7v09v
+FlAUZBBqvRVfjNp7l4TzCeeKw1cr5UTddUhw/Kt0G4dYWd9HC0F2Su0+MUu43J9vDSqch4w7yY6w
+DAwN9KTFK1wR0Y55eCTqxRcvqlrmZaPrMRqK15xdSy9YCZ+nxJJKHPQrbD0L6FULFV8my4QOxGq8
+uWbfCWYqkoSWgpt5h33mkWvijHBxnAst5Oq5ehIaq74/GciwC/SrbpOQ7XHmNNFMQgrmUyzMy1+t
+jvauYnmv0PuU2ldnMJ3g++dlY1C/tuD3YS4MvzzSkIXrm8hBmbzVlbSoePtrrQSle1H+tJ0+BvJF
+Evk2Wl24FE0wLQQNaduUvg0zYTFb7bf8dlvSCgtcKaQN47YpbHNBWQ4p6lo9tRRu9Z0pz1X/h8W4
+4vr3Unv4gPxJkKzHOsJESiywjdFoyPX92KEqxS4eM3zNSQmg8Vaglpo4lMMgsXSOqO9JDAxFMzti
+33AG0+R1SI9f73W7WPbk5IlhWJo55Z0PoCsWU4QiY7CORhEcIboQAcK00Mu5uTBHVVwfC55RIytL
+SwyQZg+u8np2zs5jtPVnNrJ25n7T84v1S6qefViHG3VRR5xxg635FZIiExx3pFb4No5M7lC7ytKz
+M+szxkPeVMgMbhwuQSphemPvGPa7y+Qi9YKOuBmAc3J4iCdDOZRy00Ugh2q+KlBT4EbS1x8uq/Qx
+dckU25mlKgTzeJ+2SvqtC/HHFi57DPZp5atC4Wv5H/CPqriBQWZsQCBKELChAm8XSGPo5/gKh74E
+7kjhMYawFNvNS87Qe8tpPAZ8+8Br+AvsgnZZPVR2aElqdfrGfWfHflqulUsulxXHGWCzr8hZkI1n
+TA/jfO4V2nH4byBF0G4qCa1l90yOnm6HKPR5XlEVtx/M0462o2hHePUS/KqvLAqgDsaXyDMxiF0o
+iYwZJZP0rnxTToJ+ppf8rOgYzffWa+arEYQ87/LdNWJEcpQy6iWGE805A+S9zt8jDbfJWj5IfOdm
+ZepnCTBLGmhlB8HEC1NlX6CdGb0O2SDFpsniF8bxq8QoX1adfMASkTOk8tlHN09exj8xAWhCPOWv
+vHrKp3U26nhuvj9akCP6qz6/EJhbn30LjeN6gZw/u8lEdc2YbeI7r32ZENeIXd6mIVs58BcJWLnU
+jPutyBCJWQcplExmj6e696y2so5nj16hzVOsvDzV6PMQOZWTsDN+UMEqoIsXsXmhAHKgG/l/psJM
+ftfR643TM9XQxLYeXFRo/ZQSQKocPfPr92FuWlJagZ1ppvsRV70MuWv8yHWrRdpGtxVWj5tgKPAx
+SNRUkY4ywU0dSmU5oFU/dKWYOueUmA6E7KuD6lQVwXLp3GpTSxeb9+muvunx9e02CNQ9jGjlkqbS
+3gcfWDlE92PDCyqC6GObXhI/ViQ12AEtW1xS1bwYNF7hvfja2gX+Jrq/c/z+qTfqJj/YcCla2zQR
+MaxqZLJM58IA9HV2HJL0EUaIs/MGgYfIonskeM65MIOYkHS9hCG74EtmS6/FqzI4OHgi1LXPWd6c
+U9kqEodB+Tfu4iLALPuXR8UUOAnmbZvmR1I3QuFEhKLuqz+9vzsX3mhF0lIKq3rhdvtONhf2R+xt
+uHfv646GW5E7ALhQwIWJ6X+/OSnRykrM/U/HBsjzqRb1cVvwXuNV+0CqH6WyQ6Ih0kxvMd/xKVb0
+ioWPVpKpwxAzp1lQRPz1bIV1rtm/D8EWenZIRLZuoxND94IcId2Pujg0yx/+NC0k1AtPPBWh/6Qu
+RtjKQBqs2jJ/oGMwRTEM7Lw0X1NNNVL1Wcrqli549aPux3KNZIf27pJCbjFWhwWRotZ9VJrcNCzH
+jSXZp+BtzuZXkS0lc4XE1pjMkBs8JohDazBmgCea/Tel1oOBFx30851lIyO8ZwJ4QDpyI3Wdg0xO
+OcLSoSpC+FYeNYMPerKO/W5x4XsqO4yk2QM3Lq0qMNFTRTwBX+342ASHCZtHDZ5seQq6Mq++E4zj
+yItUfVoPkLsnYuwvUz9I5XwGdIY/iX0VlK5F+Xfrl/1bDveB8NJHaWVSVbx7lIyBob97+L1YpmZ1
+MoJ9GY5zg4xXTzJAo+yRjWgUl4yHffWMPaF8Ac4P86wvXES4fdlh7BUnvN1wetOErT+4iAc1vVrU
+qF2JBP/v0ULoDieLuoIibBRcZj4/+kl4cgQ+nHoTWi6MB1J9RDeQrj3AclQG1cyBuBmmzJUN7hpj
+SgTTA2MrOmexEy4Z9M4u8gcU3tms0Ng0xGCpJGtBlgosIq4Rbfff5rhadeoYNlAmFCX4SpEyOcMn
+rlNFBBLBuJ6H6xZySQHNRYFh6fRmU5HAtDhzbXUl5ZghqKJ4KRDfTvAEKcE3vPeqDHulMyK3cL9d
+QY3rCjC0mnk1O0HlHOZ9Hl7W
+-----END CASPER ENCRYPTED FILE-----

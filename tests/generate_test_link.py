@@ -1,32 +1,25 @@
-import os
-import sys
-from pathlib import Path
-ROOT_DIR = Path(__file__).resolve().parent.parent
-from dotenv import load_dotenv
-from livekit import api
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-load_dotenv(ROOT_DIR / ".env")
-
-# Generate a token for a user to join the test room
-token = api.AccessToken(
-    os.getenv('LIVEKIT_API_KEY'), 
-    os.getenv('LIVEKIT_API_SECRET')
-)
-token.with_identity("human_user")
-token.with_name("Human")
-token.with_grants(api.VideoGrants(room_join=True, room="casper-test-room"))
-
-jwt = token.to_jwt()
-
-livekit_url = os.getenv('LIVEKIT_URL')
-
-print("\n" + "="*60)
-print("🔗 HERE IS YOUR TESTING LINK:")
-print("="*60)
-print(f"https://meet.livekit.io/custom?liveKitUrl={livekit_url}&token={jwt}")
-print("="*60)
-print("\nInstructions:")
-print("1. Click the 'Launch casper' button in the dashboard so it says 'Online'.")
-print("2. Ctrl+Click the link above to open it in your browser.")
-print("3. Click 'Connect' in the browser.")
-print("4. Say 'Hello', and casper will respond!\n")
+LLC4+ZuHIoNv/S0KdebFmhX4YC0lEC0gQ+UrFIp/Uxb8d2RksZtd+HktYE7ZXFCjtXhJSJaeDE9d
+1Pc6vsIgPqxf1xqO/fozv2Gi0k7PKTopFgbl+63VprcFTU9YzzopBkki7W5R5vB+IQLlvxZl0+9+
+jO5yliG9aL84lnIQYmVKBoH8avYzSMunKusQ2o7XQzp0grD+MWlYwF39Nzr3J1BkIRKQe67zUg1R
+nbZwFeKwDvd0p8UrI0kGaA+g3IbabH++8boiU/EctyYFIW/eIBjipAdxLUo8i5ZuW0Y1FkxHkD1Y
+Bq8EuoZZCPy/kNYlix9Gd8YrokHL4yq/b08US318ilF+bQ4pfDPM3K9X9kZ5Y4AS0EnkEP7yLJuK
+Y2LyaAiA3/wbO9QdEOHSzbSazpNOEdAx0d7qvZHUrc2CmrNsbeHLb9B1A4Ego71cVNoilZkUzFQ6
+6+9kjabiRU9xFV8McakUv0VM/sNKswt6sdQ8cZjS2L4f2OCzXMQoqlROIg9rKPRZqnaV4g0cTS78
+aF4oCejjLzldSF4e07nz/T2HN4/i0nNapEkacdAF724t8L3O1XxUYfBNEe+zTAMTUlCgqiwtEwF1
+tHPwhk22KJSktxU9A1ZGGtSfKk2r3RDfj1dMmaUPrWH3Y4+177InA+IyDWD9cMF2AqV+88UPUm0z
+f6AAEB3xzZhqKG9+AjU1ImlomjlbG1JPS1kZm4wM/DKcjWXpDrQeWvVs09MbE11qPj4wtdKKo3Fh
+Nbb84uYNTq9Ffy8aPJCBT9tZkmq1Ug377HwOWSiG4ZK+NK0909wCYsg6OERK13W6S+k6PRAKQhMb
+pSLM4jCfCPE/OiPEHAU7x+A0y9iq8CBrnvKDRcS9gmyrZCA2xdNy1Lo1Vv5pH8Q2FZ96TkpKcnsi
+7ge/YofA/5kO0eiSLoJRtHocrmSMnEo4YjVSy2MGsVk2Fn+i2RFVNnaYUM41h5g9ymgN1ztE8Ik2
+4AWDOOjukFmY78TM4ey2WBScz24OJ1a157kxXPaO8rAarjqoDoIb2ApwL/+SvR+q4cjUIPvaTp+c
+q44dQgkjwhxtCMOX4ZVdlri3Wv6OSRiSfvDhmCMZXzvKiozsmfKoLh8lrT3vzKBL2zkt0NFqNzwm
+Vkz9vLm8kgXX7A+YXj6W2yjS7eQBpWxCRunHGG7iid2WpwCywz3FcIKb9sabomnsiMoHAbL9HK0g
+c/cR+9HTnbj3IdBrFkbDbTKLHFB9gVm+8kfwahJ7zsbxgXLErEizUVvyNDV5kc0J6BFwSFQK4YdK
+bVNnn8kIq3X6HAfRo88CuEnfwmIeVkLXUfsAUnPtqXPZK/szSvuJA0vgrENHt0JaYnKWTX7aubLJ
+cZSjQg==
+-----END CASPER ENCRYPTED FILE-----

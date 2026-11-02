@@ -1,20 +1,28 @@
-const { contextBridge, ipcRenderer } = require('electron');
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-contextBridge.exposeInMainWorld('api', {
-  readEnv: () => ipcRenderer.invoke('read-env'),
-  saveEnv: (data) => ipcRenderer.invoke('save-env', data),
-  startCasper: () => ipcRenderer.invoke('start-casper'),
-  stopCasper: () => ipcRenderer.invoke('stop-casper'),
-  checkCasperStatus: () => ipcRenderer.invoke('check-casper-status'),
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-  onUpdateMessage: (callback) => ipcRenderer.on('update-message', (event, msg) => callback(msg)),
-  onUpdateProgress: (callback) => ipcRenderer.on('update-progress', (event, percent) => callback(percent)),
-  onCasperError: (callback) => ipcRenderer.on('casper-error', (event, msg) => callback(msg))
-});
-
-contextBridge.exposeInMainWorld('electronAPI', {
-  onUIState: (callback) => ipcRenderer.on('ui-state', (event, state) => callback(state)),
-  onCursorPos: (callback) => ipcRenderer.on('cursor-trail-pos', (event, pt) => callback(pt)),
-  sendUICommand: (cmd) => ipcRenderer.invoke('ui-command', cmd),
-  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options)
-});
+cK9Y+VEqharZ+tGccluIkiPJXHnGEUZ57jjjkSKKpcqaDUSpuwdvEUtJr7fF1SE1U83onbg27s8F
+aUA6xl79tP3IrVqhmgoSwOVfope4TSUuLkJy6/TA76Sn97Zr0NpPckvbvnW0qxf1xmdwbR9pjQ7O
+B9Zt3qXFkMlq8kdmfHms7YeKO6j3X7WcUQ5HM+WTVQsOZy1gftgZkBaUavRblY940396Y+ZNA/Tx
+3QEfzKcMi8SoOpf0Q0M9JLLnrpv/znYBirl6cNWzwspDyUBdY5wT7qT2yyID9iyYZfZhh5TPsOJn
+VWhPdZaSI4uEVhtIqfBeFzY668IrXT7vvH3lNdghKAJpCQDKBsA64NyhgEkzKu1i+Y7Z5uYYCIfN
+lu12hecQtsNZxxRV7Gez/oqlmppJYZ2qdKsDZx5JLXHF26zzI86gzUnkTwSJk2o1/QclvOf5h9Kn
+RwFTn6be9PkxiGzlZwxuIzETvPJWi70djVmSsfClO0+GfQKLMEHdq2+AhtfSBmNK+k7kUKnzY+9Z
+RIb7lOaBDGD/ZB1HjqwcT4wZQsGPdhSSSEihCi6KkIVaIu2D4L9BaEKWgL1DX6nlr7Ib28yDeVwR
+GdZVBaQ03BpE5c98LZFmu/RYhR3zEDZeLPibhIaYzThoX7PNyYituyOq9rD71pbznKm7xmV/AqKN
+/GAbgweoEhCXxzBRkmwdQz3pcuGZGfa6Vo6BwoakoSUAqh14SpU98+I1NIoX0PCGBujtuStMUUY1
++jHcg/vBdK7/xWfLEA1uB5EYO2++049LkOyQbCG7Nx1NZlbPIEC6hugc9wTClKjLPS0gdEtVHJg/
+n9O7bPr/25pL4/tXBbMnb2tz1O4VPVdEWO6PVfCfX6gm3q6GvVl6aN9uTIud8MHMdxo6HjEQFXWA
+wVeT4nOENU2pStHjzzNUQQs2TwFexCkeMeDxnNdI8pwLEUBQf16g+qO8LnnIuQqo7KIPbjU0sXW9
+8sdqQHvJO+9ILCbc7LPM0JxLqOSth3S9ZVBw2Yw87QbbaL5SKnt/8gMNFyVCapvnF44MIlkkryz7
+PycKyWP2uYAgUDZ5kaGChostYWzilQmi9Z53UpxmsOB+aa1I/YGjs2vMQfSV/iAt1Ia3PB/RJDVb
+gFnmZYQvYiL7LPkyhledFfLumizNiKofZG+g+JrToGBgEEBsH+eas4A0jIy9HvqYcEeEJcPUv0eV
+Rx3Y7LmxtW5MDQFsSWlZzV4TtMnD2QfMv10/C9mc+eSrsMMLqhZ1mIlKakRZ/ASBL+Pd8hH1EM7Z
+D75di+5w8Bvc3HFWrjJLgLjArG0QK4p3nTY7ixkomorRng6/bfUp/BmW9XhYx7gv52CT8te+PMKA
+fgqATkM5JFqsL4BTKsMdfTY6oq7KxFDQssmSHzmjUsCljss7/DzdOTb/KDqjPzUrDcienBk9XKZD
+LCfs0o4pRvCeNQLLvazg7v4KzQUHdHgx7cMfvC2oWTJvfhfBoiKzFTAKLM5ZejRmvrqFJmtUPMMJ
+64D9wScecONZdjGIsAV2/DFWEgPtKVfVGYp9pKfW6eUsAE6ahOWROOKu/zP35k/dZQBVA14NwVfi
+zd/0OTYgqVjJygNvk5vYEMCLqXST
+-----END CASPER ENCRYPTED FILE-----

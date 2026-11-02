@@ -1,267 +1,114 @@
-"""
-Chrome MCP Integration - Usage Examples
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-This file demonstrates how to use the new Chrome automation features.
-"""
-
-# Example 1: YouTube Automation
-"""
-Voice: "casper, skip this ad on YouTube"
-Result: Instantly clicks skip button using DOM selector
-
-Voice: "Play Python tutorial on YouTube"
-Result: Searches YouTube and plays first result
-
-Voice: "Pause this video"
-Result: Pauses current YouTube video
-"""
-
-# Example 2: Spotify Web Player
-"""
-Voice: "Play Bohemian Rhapsody on Spotify"
-Result: Opens Spotify Web, searches, and plays song
-
-Voice: "Next song"
-Result: Clicks next button in Spotify player
-
-Voice: "Like this song"
-Result: Adds song to liked songs
-"""
-
-# Example 3: Gmail
-"""
-Voice: "Read my unread emails"
-Result: Opens Gmail and reads recent unread emails
-
-Voice: "Check my email"
-Result: Navigates to Gmail inbox
-"""
-
-# Example 4: Web Search
-"""
-Voice: "Search for machine learning tutorials"
-Result: Opens Google and searches
-
-Voice: "Find Python documentation"
-Result: Searches and opens results
-"""
-
-# Example 5: General Navigation
-"""
-Voice: "Open YouTube"
-Result: Navigates to youtube.com
-
-Voice: "Go to github.com"
-Result: Opens GitHub
-
-Voice: "Open Netflix"
-Result: Navigates to Netflix
-"""
-
-# Example 6: Form Filling (Advanced)
-"""
-Voice: "Fill the email field with john@example.com"
-Result: Finds email input and fills it
-
-Voice: "Submit this form"
-Result: Clicks submit button
-"""
-
-# Example 7: Custom JavaScript
-"""
-Through control_computer tool with Chrome detection:
-- "Get the page title"
-- "Extract all links from this page"
-- "Download all images"
-"""
-
-# Comparison: Before vs After Chrome MCP
-
-# BEFORE (Pixel Scanning + UIA):
-"""
-Task: Skip YouTube Ad
-Time: 3-5 seconds
-Reliability: 60-70%
-Method: Search UIA tree → Fallback to Tab+Enter+Space
-"""
-
-# AFTER (Chrome MCP):
-"""
-Task: Skip YouTube Ad
-Time: <500ms
-Reliability: 99%
-Method: document.querySelector('.ytp-ad-skip-button').click()
-"""
-
-# Developer Usage
-
-# Direct tool calls in code:
-"""
-from mcp_client.chrome_tools import (
-    youtube_skip_ad,
-    spotify_play_song,
-    gmail_read_emails
-)
-
-# Skip ad
-result = await youtube_skip_ad(context)
-
-# Play song
-result = await spotify_play_song(context, "Stairway to Heaven")
-
-# Read emails
-emails = await gmail_read_emails(context, "unread")
-"""
-
-# Custom automation scripts:
-"""
-from mcp_client.chrome_tools import chrome_execute_javascript
-
-# Custom JavaScript execution
-script = '''
-const prices = [];
-document.querySelectorAll('.price').forEach(el => {
-    prices.push(el.textContent);
-});
-return prices;
-'''
-
-result = await chrome_execute_javascript(context, script)
-"""
-
-# Workflow Examples
-
-# Workflow 1: Research Assistant
-"""
-Voice: "Search for AI papers on Google Scholar,
-       open the first three,
-       and extract their abstracts"
-
-Steps:
-1. chrome_navigate → Google Scholar
-2. web_search → "AI papers"
-3. chrome_click_element → First 3 results
-4. chrome_get_page_content → Extract abstracts
-"""
-
-# Workflow 2: Social Media Manager
-"""
-Voice: "Check trending topics on Twitter,
-       create a post draft,
-       and save it for review"
-
-Steps:
-1. chrome_navigate → Twitter
-2. chrome_get_page_content → Trending section
-3. Generate post with AI
-4. Save to file
-"""
-
-# Workflow 3: Shopping Automation
-"""
-Voice: "Find wireless headphones under $100 on Amazon,
-       compare ratings,
-       add best one to cart"
-
-Steps:
-1. web_search → Amazon headphones <$100
-2. chrome_execute_javascript → Extract prices + ratings
-3. Compare and select
-4. chrome_click_element → Add to cart
-"""
-
-# Error Handling
-
-"""
-All Chrome tools have fallback behavior:
-
-1. If Chrome MCP unavailable → Falls back to original automation
-2. If element not found → Returns clear error message
-3. If timeout → Retries with longer wait
-4. If Chrome crashes → Relaunches automatically
-"""
-
-# Performance Metrics
-
-"""
-Average response times:
-
-Task                    | Before | After  | Improvement
-------------------------|--------|--------|------------
-Skip YouTube Ad         | 3.5s   | 0.4s   | 8.75x
-Play Spotify Song       | 6.0s   | 1.8s   | 3.33x
-Read Gmail              | N/A    | 2.5s   | New feature
-Web Search              | 2.0s   | 0.8s   | 2.5x
-Form Filling            | N/A    | 0.5s   | New feature
-"""
-
-# Best Practices
-
-"""
-1. Use Chrome MCP for web tasks, UIA for desktop apps
-2. Always handle the "not available" fallback
-3. Test scripts in browser console first
-4. Use specific selectors (ID > Class > Tag)
-5. Add waits for dynamic content
-6. Log all automation steps
-7. Keep Chrome profile clean
-"""
-
-# Debugging
-
-"""
-Enable debug logging:
-
-import logging
-logging.getLogger('chrome-mcp').setLevel(logging.DEBUG)
-logging.getLogger('chrome-tools').setLevel(logging.DEBUG)
-
-Check Chrome remote debugging:
-http://localhost:9222
-
-Inspect MCP communication:
-tail -f casper.log | grep chrome
-"""
-
-# Advanced Features
-
-# Multi-tab management:
-"""
-await chrome_open_new_tab(context, "https://youtube.com")
-await chrome_switch_tab(context, 0)  # Switch to first tab
-await chrome_close_tab(context)
-"""
-
-# Screenshot capture:
-"""
-await chrome_screenshot(context, full_page=True)
-# Saves screenshot for debugging
-"""
-
-# Page monitoring:
-"""
-async def monitor_price():
-    while True:
-        price = await chrome_execute_javascript(
-            context,
-            "document.querySelector('.price').textContent"
-        )
-        if float(price.replace('$', '')) < 50:
-            return f"Price dropped to {price}!"
-        await asyncio.sleep(300)  # Check every 5 minutes
-"""
-
-# Integration with Memory
-
-"""
-casper can remember:
-- Frequently visited sites
-- Preferred search engines
-- Shopping preferences
-- Email filters
-- Spotify playlists
-
-Example:
-User: "Play my usual morning playlist"
-casper: Remembers user's morning playlist and plays it
-"""
+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
+w2UPLR2AjgnUQmY4id+Wj9A=
+-----END CASPER ENCRYPTED FILE-----

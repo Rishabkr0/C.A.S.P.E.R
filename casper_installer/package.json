@@ -1,36 +1,22 @@
-{
-  "name": "casper-installer",
-  "version": "1.0.2",
-  "description": "Custom Installer for Casper",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win"
-  },
-  "build": {
-    "appId": "com.casper.installer",
-    "productName": "Casper Installer",
-    "artifactName": "Casper-Windows-Installer.exe",
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": "portable",
-      "icon": "build/icon.ico",
-      "requestedExecutionLevel": "requireAdministrator"
-    },
-    "portable": {
-      "splashImage": null,
-      "requestExecutionLevel": "admin"
-    }
-  },
-  "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
-  },
-  "dependencies": {
-    "axios": "^1.7.2",
-    "extract-zip": "^2.0.1",
-    "fs-extra": "^11.2.0"
-  }
-}
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+0IHkYGTiYMJ1dAgAWX9ZpO6TdY6vbYZ6qC8Yb1TLv38JdUrIjG6mZZNY1Jebovh6ztMikDgCE2OJ
+K/qMpHpif6cq23ZcFlnc70CbkN2aBDKtHii+45RKaBYR6oGuwjVKLYy6e0B8PT9Yy1DJBlnIcaMN
+/v5igATmQHCvBDrt2z6qq+onfyjwBXYXWRlOOY7CxGiVvlHxnTv6zkp1g+0JMfd74hGmWLU2O4cA
+Az7o23aiuQyeQ+W17UUK/ohyWEMp2z3yuTl2sWP8R6lyQkWAbAnA8Ud58WN1oucYQ/B+n96UIgLR
+/1l6SNl+GzITnWwf/xxHVrA7LTcZXVP+3cTaODvgCaq/RBEdwoHUpk29wKO3N2mRtq42aISmUCsQ
+1inVoOo4Mw0FNhhNZizAawI868zzyhAY2dPNxYU5K6aP7m3CshiTHZfaP+fWPC69Lv1VfIJNAhRq
+sj+y0MVgH1e/fjRQgwe0GI9PEuRVMjeuKg83aYAMbf86YUNDvws+Vi3H8ciJGvIBpZFlbaF14dUm
+XVvWzMTFpWSd1MpXgP34wRFItHNhrIGnk+L2F7CM8O6IiAiKKgd07QegRBP4r3PTLR91pMASSKei
+QyV+PX3EheCUfF80fTUdqohuCGMrgv5Y3mzcNscRoGVKiYqzKNzN0ghIw0ICV7UGhROsjI44zdDA
+5njbZRerEHqx4p+MoFZrSlKPZnDcLiSv7EZyz3Dej1+mMcGwhHCxpSM7w0KqsTCBzNKcyJnYLtSs
+31l7/7Aqrfay0Z/LPS/tF3szQHmxUTvtkkeAYDibkSZQtdG4AkPCyD+GzTJOYWuhwMO2lwSCtyif
+m1mjvGthCyO/zpcQ5d8js4b2pDxQ1OsXsF+5iZF1iDboFpHynszyG5OFSnMZpMULUUmk46XFERY9
+Q60/Dt/MY62LQ8xKVdry66YnN43+8g8cUA/7oZL+PYLmqzUrDKldHmWJDSwb2IYME63vvDx/0hnV
+KGu7QTPgDY6abMUb+vJvFBFnHLW6H+5SFcgU1Ez8Of4cCR45nCX+zA9vQ9tsOEqkG+1sR4ATbIdL
+rZx6rxg9DgNFdR0MBytQUZmsMTS1lYJ+M4B7BagIKJ4FpxwcuKMHtBho43/7YRNouOmYzpfQKE4o
+I9R2RdAuRaG62pFO/iiZftW/IbK4DkXXfpNY/rOxEK6SFw==
+-----END CASPER ENCRYPTED FILE-----

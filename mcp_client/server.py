@@ -1,237 +1,161 @@
-import asyncio
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
-from typing import Any, Dict, List, Optional, Tuple
-import logging
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-# Import from the installed mcp package
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-import mcp.types
-from mcp.types import CallToolResult, JSONRPCMessage, Tool as MCPTool
-from mcp.client.sse import sse_client
-from mcp.client.session import ClientSession
-
-# Base class for MCP servers
-class MCPServer:
-    async def connect(self):
-        """Connect to the server."""
-        raise NotImplementedError
-
-    @property
-    def name(self) -> str:
-        """A readable name for the server."""
-        raise NotImplementedError
-
-    async def list_tools(self) -> List[MCPTool]:
-        """List the tools available on the server."""
-        raise NotImplementedError
-
-    async def call_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> CallToolResult:
-        """Invoke a tool on the server."""
-        raise NotImplementedError
-
-    async def cleanup(self):
-        """Cleanup the server."""
-        raise NotImplementedError
-
-# Base class for MCP servers that use a ClientSession
-class _MCPServerWithClientSession(MCPServer):
-    """Base class for MCP servers that use a ClientSession to communicate with the server."""
-
-    def __init__(self, cache_tools_list: bool):
-        """
-        Args:
-            cache_tools_list: Whether to cache the tools list. If True, the tools list will be
-            cached and only fetched from the server once. If False, the tools list will be
-            fetched from the server on each call to list_tools(). You should set this to True
-            if you know the server will not change its tools list, because it can drastically
-            improve latency.
-        """
-        self.session: Optional[ClientSession] = None
-        self.exit_stack: AsyncExitStack = AsyncExitStack()
-        self._cleanup_lock: asyncio.Lock = asyncio.Lock()
-        self.cache_tools_list = cache_tools_list
-
-        # The cache is always dirty at startup, so that we fetch tools at least once
-        self._cache_dirty = True
-        self._tools_list: Optional[List[MCPTool]] = None
-        self.logger = logging.getLogger(__name__)
-
-    def create_streams(
-        self,
-    ) -> AbstractAsyncContextManager[
-        Tuple[
-            MemoryObjectReceiveStream[JSONRPCMessage | Exception],
-            MemoryObjectSendStream[JSONRPCMessage],
-        ]
-    ]:
-        """Create the streams for the server."""
-        raise NotImplementedError
-
-    async def __aenter__(self):
-        await self.connect()
-        return self
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        await self.cleanup()
-
-    def invalidate_tools_cache(self):
-        """Invalidate the tools cache."""
-        self._cache_dirty = True
-
-    async def connect(self):
-        """Connect to the server."""
-        try:
-            transport = await self.exit_stack.enter_async_context(self.create_streams())
-            read, write = transport
-            session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
-            self.session = session
-            self.logger.info(f"Connected to MCP server: {self.name}")
-        except Exception as e:
-            self.logger.error(f"Error initializing MCP server: {e}")
-            await self.cleanup()
-            raise
-
-    async def list_tools(self) -> List[MCPTool]:
-        """List the tools available on the server."""
-        if not self.session:
-            raise RuntimeError("Server not initialized. Make sure you call connect() first.")
-
-        # Return from cache if caching is enabled, we have tools, and the cache is not dirty
-        if self.cache_tools_list and not self._cache_dirty and self._tools_list:
-            return self._tools_list
-
-        # Reset the cache dirty to False
-        self._cache_dirty = False
-
-        try:
-            # Fetch the tools from the server
-            result = await self.session.list_tools()
-            self._tools_list = result.tools
-            return self._tools_list
-        except Exception as e:
-            self.logger.error(f"Error listing tools: {e}")
-            raise
-
-    async def call_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> CallToolResult:
-        """Invoke a tool on the server."""
-        if not self.session:
-            raise RuntimeError("Server not initialized. Make sure you call connect() first.")
-
-        arguments = arguments or {}
-        try:
-            return await self.session.call_tool(tool_name, arguments)
-        except Exception as e:
-            self.logger.error(f"Error calling tool {tool_name}: {e}")
-            raise
-
-    async def cleanup(self):
-        """Cleanup the server."""
-        async with self._cleanup_lock:
-            try:
-                await self.exit_stack.aclose()
-                self.session = None
-                self.logger.info(f"Cleaned up MCP server: {self.name}")
-            except Exception as e:
-                self.logger.error(f"Error cleaning up server: {e}")
-
-# Define parameter types for clarity
-MCPServerSseParams = Dict[str, Any]
-MCPServerStdioParams = Dict[str, Any]
-
-# SSE server implementation
-class MCPServerSse(_MCPServerWithClientSession):
-    """MCP server implementation that uses the HTTP with SSE transport."""
-
-    def __init__(
-        self,
-        params: MCPServerSseParams,
-        cache_tools_list: bool = False,
-        name: Optional[str] = None,
-    ):
-        """Create a new MCP server based on the HTTP with SSE transport.
-
-        Args:
-            params: The params that configure the server including the URL, headers,
-                   timeout, and SSE read timeout.
-            cache_tools_list: Whether to cache the tools list.
-            name: A readable name for the server.
-        """
-        super().__init__(cache_tools_list)
-        self.params = params
-        self._name = name or f"SSE Server at {self.params.get('url', 'unknown')}"
-
-    def create_streams(
-        self,
-    ) -> AbstractAsyncContextManager[
-        Tuple[
-            MemoryObjectReceiveStream[JSONRPCMessage | Exception],
-            MemoryObjectSendStream[JSONRPCMessage],
-        ]
-    ]:
-        """Create the streams for the server."""
-        return sse_client(
-            url=self.params["url"],
-            headers=self.params.get("headers"),
-            timeout=self.params.get("timeout", 5),
-            sse_read_timeout=self.params.get("sse_read_timeout", 60 * 5),
-        )
-
-    @property
-    def name(self) -> str:
-        """A readable name for the server."""
-        return self._name
-
-# Stdio server implementation — real MCP stdio transport
-class MCPServerStdio(_MCPServerWithClientSession):
-    """MCP server implementation that uses the Stdio transport."""
-
-    def __init__(self, params: MCPServerStdioParams, cache_tools_list: bool = False, name: Optional[str] = None):
-        super().__init__(cache_tools_list)
-        self.params = params
-        self._name = name or f"Stdio Server: {self.params.get('command', 'unknown')}"
-        # Build typed StdioServerParameters for the MCP client
-        try:
-            from mcp.client.stdio import StdioServerParameters
-            self._stdio_params = StdioServerParameters(
-                command=params["command"],
-                args=params.get("args", []),
-                env=params.get("env"),
-                cwd=params.get("cwd"),
-            )
-        except Exception as e:
-            # Fallback if import fails — keep raw params
-            logging.getLogger(__name__).warning(f"Could not build StdioServerParameters: {e}")
-            self._stdio_params = None
-
-        # Compatibility with legacy Chrome code that checked .connected
-        self._connected_compat = False
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def connected(self) -> bool:
-        return self.session is not None
-
-    @connected.setter
-    def connected(self, value: bool):
-        self._connected_compat = value
-
-    def create_streams(
-        self,
-    ) -> AbstractAsyncContextManager[
-        Tuple[
-            MemoryObjectReceiveStream[JSONRPCMessage | Exception],
-            MemoryObjectSendStream[JSONRPCMessage],
-        ]
-    ]:
-        """Create the streams for the server."""
-        try:
-            from mcp.client.stdio import stdio_client
-            if self._stdio_params is None:
-                raise RuntimeError("StdioServerParameters not initialized")
-            return stdio_client(self._stdio_params)
-        except ImportError as e:
-            raise RuntimeError(f"mcp stdio_client not available: {e}") from e
+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
+ceF7S0QnoHOJBquyBw==
+-----END CASPER ENCRYPTED FILE-----

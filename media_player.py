@@ -1,397 +1,268 @@
-import os
-import subprocess
-import threading
-import urllib.request
-import zipfile
-import shutil
-import yt_dlp
-import sys
-import logging
-import time
-import socket
-import psutil
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-BIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
-FFPLAY_PATH = os.path.join(BIN_DIR, "ffplay.exe")
-
-_current_player_process = None
-_music_queue = []
-_song_history = []
-_current_song = None
-_current_stream_url = None
-_current_duration = 0
-_current_title = ""
-_current_thumbnail = ""
-_is_seeking = False
-_worker_running = False
-_worker_thread = None
-_is_paused = False
-_current_volume = 80
-
-def _send_ui_message(msg: str):
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(msg.encode('utf-8'), ('127.0.0.1', 49152))
-        sock.close()
-    except Exception as e:
-        logger.error(f"Failed to send UI message: {e}")
-
-
-def download_ffplay_if_needed():
-    if os.path.exists(FFPLAY_PATH):
-        return True
-        
-    logger.info("ffplay not found. Downloading it automatically (this only happens once)...")
-    os.makedirs(BIN_DIR, exist_ok=True)
-    zip_path = os.path.join(BIN_DIR, "ffmpeg.zip")
-    extract_path = os.path.join(BIN_DIR, "ffmpeg_extract")
-    
-    try:
-        logger.info(f"Downloading FFmpeg from {FFMPEG_URL}...")
-        urllib.request.urlretrieve(FFMPEG_URL, zip_path)
-        logger.info("Extracting...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
-            
-        extracted_ffplay = None
-        for root, dirs, files in os.walk(extract_path):
-            if "ffplay.exe" in files:
-                extracted_ffplay = os.path.join(root, "ffplay.exe")
-                break
-                
-        if extracted_ffplay:
-            shutil.move(extracted_ffplay, FFPLAY_PATH)
-            logger.info(f"Successfully installed ffplay to {FFPLAY_PATH}")
-        else:
-            return False
-    except Exception as e:
-        logger.error(f"Failed to setup ffplay: {e}")
-        return False
-    finally:
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-        if os.path.exists(extract_path):
-            shutil.rmtree(extract_path, ignore_errors=True)
-            
-    return os.path.exists(FFPLAY_PATH)
-
-def get_audio_stream_url(search_query: str) -> dict:
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'noplaylist': True,
-        'quiet': True,
-        'default_search': 'ytsearch1'
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(search_query, download=False)
-        entry = info['entries'][0] if 'entries' in info and len(info['entries']) > 0 else info
-        if 'url' in entry:
-            return {
-                'url': entry['url'],
-                'title': entry.get('title', search_query),
-                'thumbnail': entry.get('thumbnail', ''),
-                'duration': int(entry.get('duration', 0) or 0)
-            }
-    raise ValueError(f"Could not find stream URL for: {search_query}")
-
-def _playback_worker():
-    global _current_player_process, _worker_running, _music_queue, _is_paused, _current_song, _song_history, _current_volume
-    global _current_stream_url, _current_duration, _current_title, _current_thumbnail, _is_seeking
-    while _worker_running:
-        try:
-            # Check if process finished (skip if currently seeking)
-            if _current_player_process and not _is_seeking:
-                if _current_player_process.poll() is not None:
-                    if not _is_seeking:
-                        _current_player_process = None
-                        _current_stream_url = None
-                        _current_duration = 0
-                        if len(_music_queue) == 0:
-                            _send_ui_message("MUSIC:STOP")
-            
-            # Play next song if available
-            if _current_player_process is None and len(_music_queue) > 0 and not _is_seeking:
-                next_song = _music_queue.pop(0)
-                if _current_song:
-                    _song_history.append(_current_song)
-                _current_song = next_song
-                try:
-                    media_info = get_audio_stream_url(next_song)
-                    _current_stream_url = media_info['url']
-                    _current_title = media_info['title']
-                    _current_thumbnail = media_info['thumbnail']
-                    _current_duration = int(media_info.get('duration', 0) or 0)
-                    
-                    creationflags = 0x08000000 if sys.platform == "win32" else 0
-                    cmd = [FFPLAY_PATH, "-nodisp", "-autoexit", "-hide_banner", "-loglevel", "error", "-volume", str(_current_volume), _current_stream_url]
-                    _current_player_process = subprocess.Popen(
-                        cmd, 
-                        creationflags=creationflags,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    _is_paused = False
-                    logger.info(f"Queue worker started playing: {_current_title} (duration: {_current_duration}s)")
-                    _send_ui_message(f"MUSIC:{_current_title}|IMG:{_current_thumbnail}|DUR:{_current_duration}")
-                except Exception as e:
-                    logger.error(f"Queue worker failed to play {next_song}: {e}")
-        except Exception as err:
-            logger.error(f"Error in playback worker: {err}")
-                    
-        time.sleep(1)
-
-def _ensure_worker_running():
-    global _worker_running, _worker_thread
-    if not _worker_running or (_worker_thread is not None and not _worker_thread.is_alive()):
-        if not download_ffplay_if_needed():
-            raise RuntimeError("Could not setup media player binary.")
-        _worker_running = True
-        _worker_thread = threading.Thread(target=_playback_worker, daemon=True)
-        _worker_thread.start()
-
-def add_to_queue(search_query: str):
-    """Adds a song to the playback queue."""
-    _ensure_worker_running()
-    _music_queue.append(search_query)
-    return f"Added to queue: {search_query}"
-
-def get_queue():
-    """Returns the current queue."""
-    if not _music_queue:
-        return "The music queue is currently empty."
-    return "Queue:\n" + "\n".join([f"{i+1}. {song}" for i, song in enumerate(_music_queue)])
-
-def play_song(search_query: str):
-    """Clears the queue and immediately plays a song."""
-    global _music_queue, _current_player_process, _is_seeking
-    _ensure_worker_running()
-    
-    _is_seeking = False
-    _music_queue.clear()
-    _music_queue.append(search_query)
-    
-    if _current_player_process and _current_player_process.poll() is None:
-        _current_player_process.terminate()
-        
-    return f"Now playing: {search_query}"
-
-def skip_song():
-    """Skips the currently playing song."""
-    global _current_player_process, _is_paused, _is_seeking
-    _is_seeking = False
-    if _current_player_process and _current_player_process.poll() is None:
-        try:
-            if _is_paused:
-                psutil.Process(_current_player_process.pid).resume()
-        except Exception:
-            pass
-        _current_player_process.terminate()
-        _is_paused = False
-        return "Song skipped."
-    return "Nothing is currently playing to skip."
-
-def prev_song():
-    """Plays the previous song or restarts the current song."""
-    global _song_history, _current_song, _music_queue, _current_player_process, _is_paused, _is_seeking
-    _ensure_worker_running()
-    _is_seeking = False
-    if _song_history:
-        prev = _song_history.pop()
-        if _current_song:
-            _music_queue.insert(0, _current_song)
-        _music_queue.insert(0, prev)
-        if _current_player_process and _current_player_process.poll() is None:
-            try:
-                if _is_paused:
-                    psutil.Process(_current_player_process.pid).resume()
-            except Exception:
-                pass
-            _current_player_process.terminate()
-            _is_paused = False
-        return f"Playing previous: {prev}"
-    elif _current_song:
-        _music_queue.insert(0, _current_song)
-        if _current_player_process and _current_player_process.poll() is None:
-            try:
-                if _is_paused:
-                    psutil.Process(_current_player_process.pid).resume()
-            except Exception:
-                pass
-            _current_player_process.terminate()
-            _is_paused = False
-        return f"Replaying: {_current_song}"
-    return "Nothing to replay."
-
-def stop_song():
-    """Stops playback and clears the queue."""
-    global _music_queue, _current_player_process, _is_paused, _current_song, _current_stream_url, _current_duration, _is_seeking
-    _is_seeking = False
-    _music_queue.clear()
-    _current_song = None
-    _current_stream_url = None
-    _current_duration = 0
-    if _current_player_process and _current_player_process.poll() is None:
-        try:
-            if _is_paused:
-                psutil.Process(_current_player_process.pid).resume()
-        except Exception:
-            pass
-        try:
-            _current_player_process.terminate()
-            _current_player_process.wait(timeout=1)
-        except Exception:
-            try:
-                _current_player_process.kill()
-            except Exception:
-                pass
-        _current_player_process = None
-        _is_paused = False
-
-    # Also clean up any lingering ffplay instances
-    try:
-        for proc in psutil.process_iter(['name']):
-            if proc.info['name'] and proc.info['name'].lower() == 'ffplay.exe':
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    _send_ui_message("MUSIC:STOP")
-    return "Playback stopped and queue cleared."
-
-def seek_song(target_seconds: int):
-    """Seeks to the given timestamp (in seconds) in the currently playing song."""
-    global _current_player_process, _is_paused, _current_stream_url, _current_volume, _current_duration, _is_seeking
-    if not _current_stream_url:
-        logger.warning("seek_song called but no stream URL is active")
-        return "No song is currently playing to seek."
-
-    _is_seeking = True
-    try:
-        target_seconds = max(0, int(target_seconds))
-        if _current_duration > 0:
-            target_seconds = min(target_seconds, _current_duration)
-
-        logger.info(f"Seeking current song to {target_seconds}s...")
-
-        # Terminate active ffplay process
-        if _current_player_process and _current_player_process.poll() is None:
-            try:
-                if _is_paused:
-                    psutil.Process(_current_player_process.pid).resume()
-            except Exception:
-                pass
-            try:
-                _current_player_process.terminate()
-                _current_player_process.wait(timeout=0.6)
-            except Exception:
-                try:
-                    _current_player_process.kill()
-                except Exception:
-                    pass
-            _current_player_process = None
-
-        # Clean up any lingering ffplay instances
-        try:
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'] and proc.info['name'].lower() == 'ffplay.exe':
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        creationflags = 0x08000000 if sys.platform == "win32" else 0
-        cmd = [
-            FFPLAY_PATH,
-            "-nodisp",
-            "-autoexit",
-            "-hide_banner",
-            "-loglevel", "error",
-            "-volume", str(_current_volume),
-            "-ss", str(target_seconds),
-            _current_stream_url
-        ]
-        _current_player_process = subprocess.Popen(
-            cmd,
-            creationflags=creationflags,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        if _is_paused:
-            time.sleep(0.05)
-            try:
-                p = psutil.Process(_current_player_process.pid)
-                p.suspend()
-            except Exception:
-                pass
-
-        logger.info(f"Playback resumed at {target_seconds}s (PID: {_current_player_process.pid})")
-        return f"Seeked to {target_seconds} seconds."
-    except Exception as e:
-        logger.error(f"Error seeking song: {e}")
-        return f"Error seeking song: {e}"
-    finally:
-        _is_seeking = False
-
-def pause_song():
-    """Pauses the currently playing song."""
-    global _current_player_process, _is_paused
-    if _current_player_process and _current_player_process.poll() is None and not _is_paused:
-        try:
-            p = psutil.Process(_current_player_process.pid)
-            p.suspend()
-            _is_paused = True
-            return "Song paused."
-        except Exception as e:
-            return f"Failed to pause: {e}"
-    return "Nothing to pause."
-
-def resume_song():
-    """Resumes the paused song."""
-    global _current_player_process, _is_paused
-    if _current_player_process and _current_player_process.poll() is None and _is_paused:
-        try:
-            p = psutil.Process(_current_player_process.pid)
-            p.resume()
-            _is_paused = False
-            return "Song resumed."
-        except Exception as e:
-            return f"Failed to resume: {e}"
-    return "Nothing to resume."
-
-def set_music_volume(level: int):
-    """Sets the volume of the background music player (0-100)."""
-    global _current_volume
-    try:
-        _current_volume = max(0, min(100, int(level)))
-    except Exception:
-        pass
-    try:
-        try:
-            import comtypes
-            comtypes.CoInitialize()
-        except Exception:
-            pass
-        from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
-        sessions = AudioUtilities.GetAllSessions()
-        found = False
-        for session in sessions:
-            if session.Process and session.Process.name().lower() == "ffplay.exe":
-                volume = session._ctl.QueryInterface(ISimpleAudioVolume)
-                volume.SetMasterVolume(max(0.0, min(1.0, _current_volume / 100.0)), None)
-                found = True
-        if found:
-            return f"Music volume set to {_current_volume}%."
-        else:
-            return "Could not find an active music player process. Please ensure a song is playing first."
-    except Exception as e:
-        logger.error(f"Failed to set volume: {e}")
-        return f"Error setting volume: {e}"
+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
+K9DcmKdIITaVHFDDZpko
+-----END CASPER ENCRYPTED FILE-----

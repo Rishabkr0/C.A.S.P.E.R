@@ -1,130 +1,100 @@
-import os
-import glob
-import logging
-import time
-import subprocess
-import threading
-import urllib.parse
-from livekit.agents import function_tool, RunContext
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-logger = logging.getLogger("obsidian-tools")
-
-def _show_on_screen_and_close(note_name: str, file_path: str):
-    """Visually pops up the note on the screen for 8 seconds, then closes it."""
-    def _task():
-        try:
-            # Attempt to open with Obsidian URI scheme
-            encoded_name = urllib.parse.quote(note_name.replace('.md', ''))
-            # vault parameter is optional, Obsidian usually opens the default or active vault
-            subprocess.run(['start', f'obsidian://open?file={encoded_name}'], shell=True)
-        except Exception:
-            # Fallback to default system handler or notepad
-            subprocess.Popen(['notepad.exe', file_path])
-            
-        time.sleep(8)
-        
-        # Close the app
-        subprocess.run(['taskkill', '/IM', 'Obsidian.exe', '/F'], capture_output=True, shell=True)
-        subprocess.run(['taskkill', '/IM', 'notepad.exe', '/F'], capture_output=True, shell=True)
-        
-    threading.Thread(target=_task, daemon=True).start()
-
-# Dynamically resolve the current user's Documents folder so it works on any PC!
-OBSIDIAN_VAULT_PATH = os.path.join(os.path.expanduser("~"), "Documents", "MyVault", "CASPER")
-
-def _ensure_vault_exists():
-    if not os.path.exists(OBSIDIAN_VAULT_PATH):
-        os.makedirs(OBSIDIAN_VAULT_PATH, exist_ok=True)
-        logger.info(f"Created Obsidian vault directory at {OBSIDIAN_VAULT_PATH}")
-
-def _get_note_path(note_name: str) -> str:
-    _ensure_vault_exists()
-    if not note_name.endswith(".md"):
-        note_name += ".md"
-    return os.path.join(OBSIDIAN_VAULT_PATH, note_name)
-
-@function_tool()
-async def obsidian_search_notes(context: RunContext, query: str) -> str:
-    """Searches all notes in the Obsidian vault for a specific keyword or phrase."""
-    _ensure_vault_exists()
-    results = []
-    
-    # Search all .md files in the vault
-    search_pattern = os.path.join(OBSIDIAN_VAULT_PATH, "**", "*.md")
-    for file_path in glob.glob(search_pattern, recursive=True):
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                if query.lower() in content.lower():
-                    # Extract snippets
-                    lines = content.split('\n')
-                    for i, line in enumerate(lines):
-                        if query.lower() in line.lower():
-                            note_name = os.path.relpath(file_path, OBSIDIAN_VAULT_PATH)
-                            results.append(f"[{note_name}]: {line.strip()}")
-        except Exception as e:
-            logger.error(f"Error reading {file_path}: {e}")
-            
-    if not results:
-        return f"No results found for '{query}' in the Obsidian vault."
-    
-    return "Search Results:\n" + "\n".join(results)
-
-@function_tool()
-async def obsidian_read_note(context: RunContext, note_name: str) -> str:
-    """Reads the full contents of a specific note from the Obsidian vault."""
-    file_path = _get_note_path(note_name)
-    if not os.path.exists(file_path):
-        return f"Error: Note '{note_name}' does not exist in the vault."
-        
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            return f"--- Content of {note_name} ---\n{content}"
-    except Exception as e:
-        return f"Failed to read note '{note_name}': {str(e)}"
-
-@function_tool()
-async def obsidian_append_note(context: RunContext, note_name: str, content: str) -> str:
-    """Appends new text to the bottom of an existing note."""
-    file_path = _get_note_path(note_name)
-    if not os.path.exists(file_path):
-        return f"Error: Note '{note_name}' does not exist. Use obsidian_create_note first."
-        
-    try:
-        with open(file_path, 'a', encoding='utf-8') as f:
-            f.write("\n" + content)
-        
-        # Show the updated note on screen briefly
-        _show_on_screen_and_close(note_name, file_path)
-        
-        return f"Successfully appended content to '{note_name}'."
-    except Exception as e:
-        return f"Failed to append to note '{note_name}': {str(e)}"
-
-@function_tool()
-async def obsidian_create_note(context: RunContext, note_name: str, content: str) -> str:
-    """Creates a brand new note in the Obsidian vault with the given content."""
-    file_path = _get_note_path(note_name)
-    if os.path.exists(file_path):
-        return f"Error: Note '{note_name}' already exists. Use obsidian_append_note instead."
-        
-    try:
-        # Ensure subdirectories exist if the note_name includes folders like "Projects/NewApp"
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-            
-        # Show the newly created note on screen briefly
-        _show_on_screen_and_close(note_name, file_path)
-        
-        return f"Successfully created new note '{note_name}'."
-    except Exception as e:
-        return f"Failed to create note '{note_name}': {str(e)}"
-
-OBSIDIAN_TOOLS = [
-    obsidian_search_notes,
-    obsidian_read_note,
-    obsidian_append_note,
-    obsidian_create_note
-]
+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
+SOVjX0Mwh8k=
+-----END CASPER ENCRYPTED FILE-----

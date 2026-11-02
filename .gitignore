@@ -43,3 +43,9 @@ local_qdrant_db_test/
 local_qdrant_db_test_key/
 worker_workspace/
 worker_workspace
+
+# Casper Crypt Key Files (CRITICAL: Never commit to Git)
+.casper_key
+casper.key
+*.key
+.casper_key.bak

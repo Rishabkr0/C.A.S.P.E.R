@@ -1,250 +1,190 @@
-import asyncio, json, logging, os
-from dotenv import load_dotenv
-from google import genai
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-_uia_lock = asyncio.Lock()
-_uia_cancel = asyncio.Event()
-
-UIA_SCHEMA = """
-CRITICAL RULE: IGNORE the transparent 'casper Studio' overlay banner at the top of the screen! Do NOT attempt to click or focus 'casper Studio'. Interact ONLY with the target app window (e.g. VS Code, Chrome, etc.).
-FOLDER DIALOG RULE: When a File Open or Folder Select dialog is open, do NOT scroll! Type the folder/file name directly into the 'Folder:' or 'File name:' box and press Enter.
-
-Respond ONLY with valid JSON, no other text:
-{
-  "reasoning": "what you observe and why this action",
-  "action": "focus_window | click | double_click | right_click | type | key | scroll | open_app | done",
-  "window_title": "title of window to focus (for focus_window)",
-  "app_name": "name of application or command like 'code <folder_path>' (for open_app)",
-  "element_name": "exact name of UI element (for click/double_click/right_click)",
-  "element_type": "Button | Edit | TreeItem | ListItem | MenuItem (optional)",
-  "text": "text or full multiline code snippet to paste into active window (for type)",
-  "keys": "shortcut like 'ctrl+n' for new file, 'ctrl+s' for save, 'ctrl+k, ctrl+o' for open folder",
-  "scroll_direction": "up | down",
-  "scroll_amount": 3,
-  "done_summary": "summary of what was accomplished (for done)"
-}
-"""
-
-def _get_ui_state(focused_window_title: str = None, task: str = "") -> tuple[str, object]:
-    """Read current UI state as structured text. Returns (description, window_ref)."""
-    from pywinauto import Desktop
-    desktop = Desktop(backend="uia")
-
-    # List all visible windows
-    windows = []
-    for w in desktop.windows():
-        try:
-            title = w.window_text().strip()
-            if title:
-                windows.append(title)
-        except Exception:
-            pass
-    window_list = "\n".join(f'  - "{t}"' for t in windows[:15])
-
-    # If no window explicitly focused yet, auto-match dynamically from task for ANY app
-    if not focused_window_title and task:
-        task_lower = task.lower()
-        for t in windows:
-            t_words = [word.lower() for word in t.split() if len(word) > 2 and word.lower() not in ("the", "and", "for", "with", "app", "window", "casper", "studio", "dashboard")]
-            if any(w_word in task_lower for w_word in t_words):
-                focused_window_title = t
-                break
-
-    # Get controls for the focused window
-    controls_text = ""
-    window_ref = None
-    if focused_window_title:
-        try:
-            window_ref = desktop.window(title_re=f".*{focused_window_title}.*")
-            try:
-                if window_ref.is_minimized():
-                    window_ref.restore()
-            except Exception:
-                pass
-            window_ref.set_focus()
-            controls = []
-            for ctrl in window_ref.descendants():
-                try:
-                    name = ctrl.window_text().strip()
-                    ctype = ctrl.friendly_class_name()
-                    if name and ctrl.is_visible():
-                        controls.append(f'  {ctype}: "{name}"' + ('' if ctrl.is_enabled() else ' [disabled]'))
-                except Exception:
-                    pass
-            if controls:
-                controls_text = f"\nControls in \"{focused_window_title}\":\n" + "\n".join(controls[:50])
-        except Exception as e:
-            controls_text = f"\n(Could not read controls for \"{focused_window_title}\": {e})"
-
-    return f"Open Windows:\n{window_list}{controls_text}", window_ref
-
-
-def _execute_uia(action: dict, window_ref) -> object:
-    """Execute a UIA action. Returns updated window_ref if window changed."""
-    from pywinauto import Desktop
-    import pyautogui
-
-    a = action["action"]
-
-    if a == "focus_window":
-        title = action.get("window_title", "")
-        w = Desktop(backend="uia").window(title_re=f".*{title}.*")
-        try:
-            if w.is_minimized():
-                w.restore()
-        except Exception:
-            pass
-        w.set_focus()
-        return w
-
-    elif a in ("click", "double_click", "right_click"):
-        if window_ref is None:
-            raise ValueError("No window focused — use focus_window first")
-        name = action.get("element_name", "")
-        ctype = action.get("element_type")
-        kwargs = {"title": name}
-        if ctype:
-            kwargs["control_type"] = ctype
-        ctrl = window_ref.child_window(**kwargs)
-        ctrl.set_focus()
-        if a == "click":
-            ctrl.click_input()
-        elif a == "double_click":
-            ctrl.double_click_input()
-        elif a == "right_click":
-            ctrl.right_click_input()
-
-    elif a == "type":
-        import time
-        text_to_type = action.get("text", "")
-        if "\n" in text_to_type or len(text_to_type) > 10 or any(c in text_to_type for c in "{}[]()'\"=<>#;/\\"):
-            try:
-                import pyperclip
-                pyperclip.copy(text_to_type)
-                time.sleep(0.1)
-                pyautogui.hotkey("ctrl", "v")
-            except Exception:
-                pyautogui.write(text_to_type, interval=0.01)
-        else:
-            pyautogui.write(text_to_type, interval=0.03)
-
-    elif a == "key":
-        import time
-        keys_str = action.get("keys", "")
-        if "," in keys_str:
-            for combo in keys_str.split(","):
-                combo = combo.strip()
-                if combo:
-                    pyautogui.hotkey(*[k.strip() for k in combo.split("+")])
-                    time.sleep(0.2)
-        else:
-            pyautogui.hotkey(*[k.strip() for k in keys_str.split("+")])
-
-    elif a == "open_app":
-        app_name = action.get("app_name", "")
-        from computer_use import launch_app
-        launch_app(app_name)
-
-    elif a == "scroll":
-        amt = action.get("scroll_amount", 3)
-        pyautogui.scroll(amt if action.get("scroll_direction") == "up" else -amt)
-
-    return window_ref
-
-
-async def uia_loop(task: str, max_steps: int = 20) -> str:
-    """
-    Control the PC using Windows UI Automation — reads actual UI element tree,
-    no screenshot, no vision model, no coordinate guessing.
-    Falls back with UIANotSupportedError if the target app doesn't support UIA.
-    """
-    if _uia_lock.locked():
-        _uia_cancel.set()          # signal the running loop to stop
-        await asyncio.sleep(0.3)   # give it a moment to notice
-
-    _uia_cancel.clear()
-    async with _uia_lock:
-        history = []
-        focused_window = None
-        window_ref = None
-
-        for step in range(max_steps):
-            if _uia_cancel.is_set():
-                logging.info("UIA loop cancelled — new task incoming")
-                return "Previous task cancelled."
-
-            state_text, window_ref = await asyncio.to_thread(_get_ui_state, focused_window, task)
-
-            prompt = (
-                f"You are controlling a Windows PC to accomplish: {task}\n\n"
-                f"Current UI state (no screenshot — this is the actual element tree):\n{state_text}\n\n"
-                f"Steps so far: {json.dumps(history[-5:])}\n\n"
-                f"To interact with an app: first 'focus_window', then 'click' using the exact "
-                f"element name from the controls list above.\n\n"
-                f"{UIA_SCHEMA}"
-            )
-
-            try:
-                api_task = asyncio.create_task(
-                    client.aio.models.generate_content(
-                        model="gemini-3.5-flash-lite",
-                        contents=[prompt],  # text only — no image at all
-                        config=genai.types.GenerateContentConfig(
-                            response_mime_type="application/json"
-                        )
-                    )
-                )
-                cancel_task = asyncio.create_task(_uia_cancel.wait())
-
-                done, pending = await asyncio.wait(
-                    [api_task, cancel_task],
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                if cancel_task in done:
-                    api_task.cancel()
-                    logging.info("UIA loop cancelled during API call.")
-                    return "Previous task cancelled."
-
-                response = api_task.result()
-                action = json.loads(response.text)
-            except json.JSONDecodeError as e:
-                logging.error(f"UIA bad JSON at step {step}: {e}")
-                continue
-            except Exception as e:
-                error_str = str(e)
-                if "503" in error_str or "UNAVAILABLE" in error_str:
-                    logging.warning(f"Gemini 503 at step {step}, retrying in 3s...")
-                    await asyncio.sleep(3)
-                    continue
-                if "429" in error_str:
-                    return "Task failed: Tell Sir that you have reached the daily quota limit for the Gemini API."
-                if "404" in error_str:
-                    return "Task failed: Tell Sir that the Gemini model assigned to you is currently unsupported or offline on Google's servers."
-                logging.error(f"UIA API error: {error_str}")
-                return f"Task failed: {error_str}"
-
-            logging.info(f"UIA Step {step}: {action}")
-            history.append({"action": action.get("action"), "reasoning": action.get("reasoning", "")})
-
-            if action["action"] == "done":
-                return action.get("done_summary", "Task completed.")
-
-            if action["action"] == "focus_window":
-                focused_window = action.get("window_title", focused_window)
-
-            try:
-                window_ref = await asyncio.to_thread(_execute_uia, action, window_ref)
-            except Exception as e:
-                logging.warning(f"UIA action failed at step {step}: {e}")
-                history[-1]["error"] = str(e)
-
-            await asyncio.sleep(0.5)
-
-        return "Reached max steps without completing. Stopped for safety."
-
-
-class UIANotSupportedError(Exception):
-    pass
+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
+8tahci6msfBCTQ==
+-----END CASPER ENCRYPTED FILE-----

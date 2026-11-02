@@ -1,800 +1,519 @@
-import asyncio
-import sys
-import traceback
-
-def write_crash_log(msg):
-    with open("crash.log", "a") as f:
-        f.write(msg + "\n")
-
-try:
-    if sys.platform == 'win32':
-        if sys.stdout is not None:
-            sys.stdout.reconfigure(encoding='utf-8')
-        if sys.stderr is not None:
-            sys.stderr.reconfigure(encoding='utf-8')
-except Exception as e:
-    write_crash_log(f"reconfigure error: {e}")
-
-from dotenv import load_dotenv
-
-from livekit import agents, rtc
-from livekit.agents import AgentSession, Agent, RoomInputOptions, ChatContext
-from livekit.agents.voice.io import AudioInput
-from livekit.plugins import noise_cancellation
-from livekit.plugins import google
-from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
-from tools import get_weather, search_web, send_email, play_music, stop_music, add_to_queue, skip_song, get_queue, set_music_volume, seek_song, play_obsidian_playlist
-try:
-    from office_tools import OFFICE_TOOLS as _OFFICE_TOOLS
-except ImportError:
-    _OFFICE_TOOLS = []
-
-try:
-    from google_tools import GOOGLE_TOOLS as _GOOGLE_TOOLS
-except ImportError:
-    _GOOGLE_TOOLS = []
-
-try:
-    from obsidian_tools import OBSIDIAN_TOOLS as _OBSIDIAN_TOOLS
-except ImportError:
-    _OBSIDIAN_TOOLS = []
-
-from livekit.agents import function_tool, RunContext
-import computer_use_enhanced as computer_use
-from worker_agent import delegate_heavy_task
-from mcp_client.chrome_server import create_chrome_server
-from mcp_client import chrome_tools as chrome_tools_module
-try:
-    from mcp_client.chrome_tools import CHROME_TOOLS as _CHROME_TOOLS
-except Exception as _e:
-    _CHROME_TOOLS = []
-    pass
-
-from mem0 import MemoryClient
-
-# Global mem0 client (set in entrypoint)
-_mem0_client: MemoryClient | None = None
-_mem0_user: str = "Rishab"
-
-import ide_control
-from screen_vision import (
-    ScreenVideoInput,
-    CircleGestureDetector,
-    start_screen_vision,
-    stop_screen_vision,
-    inspect_focused_screen_area
-)
-
-@function_tool()
-async def write_code_in_vscode(
-    context: RunContext,
-    instruction: str,
-    filename: str = "",
-    code: str = "",
-) -> str:
-    """
-    Writes, generates, or updates code directly in VS Code (or active IDE).
-    ALWAYS call this tool whenever Boss asks to:
-    - 'Write code in VS Code' / 'Write code for X'
-    - 'Write a python/js script in VS Code'
-    - 'Create a file called X and write code'
-    - 'Add a function/class to my file in VS Code'
-    - 'Generate code for X in VS Code'
-
-    Args:
-        instruction: What code to write or implement (e.g. "Create a snake game", "Write a binary search algorithm")
-        filename: Optional filename (e.g. "snake.py", "app.py"). If not specified, Casper automatically determines the best name or uses the active file.
-        code: Optional raw code if already generated. If omitted, Casper generates the full, complete code.
-    """
-    return await ide_control.write_code_to_ide(
-        task_description=instruction,
-        filename=filename,
-        provided_code=code
-    )
-
-@function_tool()
-async def fix_code_in_ide(
-    context: RunContext,
-    task_description: str = "",
-) -> str:
-    """
-    Inspects the code on screen in the active IDE (VS Code, Antigravity IDE, Cursor, etc.),
-    identifies all bugs, syntax errors, or issues, applies the fix directly into the editor,
-    and saves the file.
-    ALWAYS use this tool whenever Boss asks to:
-    - 'Fix the bug in test.py' or any other file
-    - 'Find the bug in my code and fix it'
-    - 'Look at my screen / VS Code and fix the error'
-    - 'What is wrong with my code? Fix it'
-    - 'Correct this code'
-    """
-    return await ide_control.inspect_and_fix_code(task_description)
-
-@function_tool()
-async def inspect_code_on_screen(
-    context: RunContext,
-    question: str = "",
-) -> str:
-    """
-    Visually inspects the code and error squiggles on screen in the active IDE (VS Code, Cursor, PyCharm)
-    and explains the bug, syntax issue, or answers questions WITHOUT making changes to the file yet.
-    """
-    return await ide_control.inspect_code_only(question)
-
-@function_tool()
-async def navigate_and_edit_line(
-    context: RunContext,
-    line_number: int,
-    fixed_code: str,
-) -> str:
-    """
-    Directly navigates to a specific line number in the active IDE via Ctrl+G,
-    replaces the line with fixed_code, and saves the file.
-    """
-    ide_info = ide_control.get_ide_window_info()
-    hwnd = ide_info.get("hwnd")
-    filename = ide_info.get("active_filename")
-    file_path = ide_control.find_file_on_disk(filename) if filename else None
-    success, msg = ide_control.jump_and_replace_line_in_ide(
-        line_number=line_number,
-        fixed_code=fixed_code,
-        hwnd=hwnd,
-        file_path=file_path
-    )
-    return msg
-
-@function_tool()
-async def stop_current_task(
-    context: RunContext,
-    reason: str = "",
-) -> str:
-    """
-    IMMEDIATELY stops, halts, and cancels any active, ongoing, or running task.
-    ALWAYS call this tool instantly whenever Boss says:
-    - 'stop', 'stop that', 'stop the task', 'stop what you are doing'
-    - 'cancel', 'cancel that', 'cancel the build', 'abort'
-    - 'halt', 'hold on, stop', 'wait, stop'
-    - 'ruko', 'ruk jao', 'bas karo', 'band karo', 'roko', 'abhi roko'
-    This tool cancels running background worker tasks, terminates background worker processes,
-    stops active media/music playback, and dismisses active task overlays immediately.
-    """
-    logging.info(f"stop_current_task invoked by user command (reason: '{reason}')")
-    stopped_items = []
-
-    # 1. Cancel background worker (OpenCode, DeepSeek, site building)
-    try:
-        from worker_agent import cancel_current_worker
-        if cancel_current_worker():
-            stopped_items.append("background worker")
-    except Exception as e:
-        logging.warning(f"Error cancelling background worker: {e}")
-
-    # 2. Stop music/media playback
-    try:
-        import media_player
-        if media_player._current_player_process and media_player._current_player_process.poll() is None:
-            media_player.stop_song()
-            stopped_items.append("music playback")
-    except Exception as e:
-        logging.warning(f"Error stopping music: {e}")
-
-    # 3. Update overlay state to idle
-    try:
-        update_ui("idle")
-    except Exception:
-        pass
-
-    if stopped_items:
-        return f"Understood, Boss. I have immediately stopped {', '.join(stopped_items)} and cleared all active tasks. Standing by."
-    else:
-        return "Understood, Boss. All tasks halted immediately. Standing by for your command."
-
-@function_tool()
-async def control_computer(
-    context: RunContext,  # type: ignore
-    task: str) -> str:
-    """Execute a complex task on the computer UI."""
-    return await computer_use.computer_use_loop(task)
-
-
-@function_tool()
-async def save_memory(
-    context: RunContext,
-    text: str,
-) -> str:
-    """
-    Save a memory about the user for future sessions.
-
-    Use this whenever the user shares personal preferences, facts,
-    or asks to remember something. Examples:
-    - "My favorite song is Numb by Linkin Park"
-    - "I like Python and Rust"
-    - "Remember I am building a compiler"
-    - "My birthday is in June"
-
-    Args:
-        text: The fact to remember (e.g., "User's favorite song is Numb by Linkin Park")
-    """
-    global _mem0_client, _mem0_user
-    if _mem0_client is None:
-        return "Memory service not available (no MEM0_API_KEY)"
-    try:
-        # Use to_thread because MemoryClient is sync
-        result = await asyncio.to_thread(
-            _mem0_client.add, [{"role": "user", "content": text}], user_id=_mem0_user
-        )
-        logging.info(f"save_memory: saved '{text}' -> {result}")
-        return f"Remembered: {text}"
-    except Exception as e:
-        logging.error(f"save_memory failed: {e}")
-        return f"Failed to save memory: {e}"
-
-
-@function_tool()
-async def recall_memory(
-    context: RunContext,
-    query: str,
-) -> str:
-    """
-    Search memories for a query. Use when user asks about past preferences.
-
-    Examples:
-    - query="favorite song" when user asks "what is my favorite song?"
-    - query="last session" or "Rust compiler" when user asks what we did
-
-    Args:
-        query: Search query
-    """
-    global _mem0_client, _mem0_user
-    if _mem0_client is None:
-        return "Memory service not available"
-    try:
-        res = await asyncio.to_thread(
-            _mem0_client.search, query, filters={"user_id": _mem0_user}
-        )
-        results = res.get("results", []) if isinstance(res, dict) else res
-        if not results:
-            return f"No memories found for '{query}'"
-        formatted = "\n".join([f"- {r.get('memory')} (updated {r.get('updated_at')})" for r in results[:5]])
-        logging.info(f"recall_memory '{query}' -> {formatted}")
-        return formatted
-    except Exception as e:
-        logging.error(f"recall_memory failed: {e}")
-        return f"Failed to search memories: {e}"
-
-# Global Chrome server instance
-chrome_server = None
-
-import os
-import json
-import logging
-import subprocess
-import atexit
-import sys
-
-load_dotenv()
-
-# --- UI Management ---
-import subprocess
-import threading
-import atexit
-
-ui_process = None
-
-def start_ui():
-    global ui_process
-    if os.getenv("DISABLE_PYSIDE_UI") == "1":
-        return
-    try:
-        # Launch the overlay with stdin pipe
-        ui_process = subprocess.Popen([sys.executable, "jarvis_overlay.py"], stdin=subprocess.PIPE)
-    except Exception as e:
-        logging.error(f"Failed to start UI: {e}")
-
-def update_ui(state):
-    global ui_process
-    # Send state to old PySide6 overlay (if running)
-    if ui_process and ui_process.stdin:
-        try:
-            ui_process.stdin.write((state + '\n').encode('utf-8'))
-            ui_process.stdin.flush()
-        except Exception:
-            pass
-    # Send state to new Electron overlay via UDP
-    try:
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(state.encode('utf-8'), ('127.0.0.1', 49152))
-        sock.close()
-    except Exception:
-        pass
-
-def stop_ui():
-    global ui_process
-    if ui_process:
-        try:
-            ui_process.terminate()
-            ui_process = None
-        except Exception:
-            pass
-
-atexit.register(stop_ui)
-# --------------------------------
-class MuteableAudioInput(AudioInput):
-    """
-    Wraps session.input.audio to stream continuous silence frames when muted.
-    Benefits:
-    1. Keeps WebSocket to Google Gemini Realtime continuously alive with audio packets,
-       preventing 1008 policy violation aborts due to idle timeouts.
-    2. Keeps the PortAudio / sounddevice hardware microphone active without
-       attaching/detaching, avoiding hardware re-initialization pops and latency.
-    3. Guarantees Casper's voice speaking output is never interrupted.
-    """
-    def __init__(self, source: AudioInput):
-        super().__init__(label="muteable_input", source=source)
-        self.muted = False
-
-    async def __anext__(self) -> rtc.AudioFrame:
-        frame = await self.source.__anext__()
-        if self.muted:
-            silent_data = bytes(frame.samples_per_channel * frame.num_channels * 2)
-            return rtc.AudioFrame(
-                data=silent_data,
-                sample_rate=frame.sample_rate,
-                num_channels=frame.num_channels,
-                samples_per_channel=frame.samples_per_channel
-            )
-        return frame
-
-
-class Assistant(Agent):
-    def __init__(self, chat_ctx=None, lazy_load_chrome=False) -> None:
-        # Build base tool list (memory tools are critical for persistence)
-        _base_tools = [
-            stop_current_task,
-            start_screen_vision,
-            stop_screen_vision,
-            inspect_focused_screen_area,
-            write_code_in_vscode,
-            fix_code_in_ide,
-            inspect_code_on_screen,
-            navigate_and_edit_line,
-            delegate_heavy_task,
-            get_weather,
-            search_web,
-            send_email,
-            play_music,
-            stop_music,
-            add_to_queue,
-            skip_song,
-            get_queue,
-            set_music_volume,
-            seek_song,
-            play_obsidian_playlist,
-            control_computer,
-            save_memory,
-            recall_memory
-        ] + _OFFICE_TOOLS + _GOOGLE_TOOLS + _OBSIDIAN_TOOLS
-
-        # FIX: Gemini Realtime (gemini-3.1-flash-live-preview) does NOT support mid-session tool updates
-        # Log warning: "has limited mid-session update support. instructions, chat context, and tool updates
-        # will not be applied until the next session." So lazy-loading after session.start is broken.
-        # Chrome tools MUST be registered BEFORE super().__init__ / session.start. Force eager load.
-        if lazy_load_chrome and _CHROME_TOOLS:
-            logging.warning(
-                "lazy_load_chrome=True is incompatible with Gemini Realtime (no mid-session tool updates). "
-                "Forcing eager load of Chrome tools before session start."
-            )
-            lazy_load_chrome = False
-
-        if lazy_load_chrome:
-            # Start with only base tools, Chrome tools will be added later (DEPRECATED - won't work with Realtime)
-            _all_tools = _base_tools
-            logging.info(f"Registering {len(_all_tools)} base tools (Chrome tools will lazy-load)")
-        else:
-            # Eager load: register all tools immediately so LLM can use Chrome MCP when needed
-            _all_tools = _base_tools + list(_CHROME_TOOLS) if _CHROME_TOOLS else _base_tools
-            logging.info(f"Registering {len(_all_tools)} tools with Assistant: {[getattr(t, '__name__', str(t)) for t in _all_tools]}")
-
-        super().__init__(
-            instructions=AGENT_INSTRUCTION,
-            llm=google.beta.realtime.RealtimeModel(
-                 instructions=AGENT_INSTRUCTION,
-                 model="gemini-3.1-flash-live-preview",
-                 api_key=os.getenv("GEMINI_API_KEY"),
-                 voice=os.getenv("CASPER_VOICE", "Charon"),
-                 temperature=0.8,
-                 modalities=["AUDIO"],
-            ),
-            tools=_all_tools,
-            chat_ctx=chat_ctx
-
-        )
-        self._chrome_tools_loaded = not lazy_load_chrome
-
-    async def add_chrome_tools(self):
-        """Lazy-load Chrome tools when first needed"""
-        if self._chrome_tools_loaded or not _CHROME_TOOLS:
-            return
-
-        logging.info(f"Lazy-loading {len(_CHROME_TOOLS)} Chrome MCP tools...")
-        for tool in _CHROME_TOOLS:
-            self.register_tool(tool)
-        self._chrome_tools_loaded = True
-        logging.info("Chrome tools loaded successfully")
-
-class UICommandProtocol(asyncio.DatagramProtocol):
-    def connection_made(self, transport):
-        self.transport = transport
-        
-    def datagram_received(self, data, addr):
-        msg = data.decode('utf-8').strip()
-        try:
-            if msg == "CMD:SKIP":
-                import media_player
-                media_player.skip_song()
-            elif msg == "CMD:PREV":
-                import media_player
-                media_player.prev_song()
-            elif msg == "CMD:STOP":
-                import media_player
-                media_player.stop_song()
-            elif msg == "CMD:PAUSE":
-                import media_player
-                media_player.pause_song()
-            elif msg == "CMD:RESUME":
-                import media_player
-                media_player.resume_song()
-            elif msg.startswith("CMD:VOLUME:"):
-                import media_player
-                try:
-                    vol = int(msg.split("CMD:VOLUME:")[1])
-                    media_player.set_music_volume(vol)
-                except Exception as e:
-                    logging.error(f"Failed to set volume: {e}")
-            elif msg.startswith("CMD:SEEK:"):
-                import media_player
-                try:
-                    sec = int(float(msg.split("CMD:SEEK:")[1]))
-                    media_player.seek_song(sec)
-                except Exception as e:
-                    logging.error(f"Failed to seek: {e}")
-        except Exception as e:
-            logging.error(f"UI Command Error: {e}")
-
-async def start_ui_command_listener():
-    loop = asyncio.get_running_loop()
-    try:
-        transport, protocol = await loop.create_datagram_endpoint(
-            lambda: UICommandProtocol(),
-            local_addr=('127.0.0.1', 49153)
-        )
-        logging.info("Started UI command listener on port 49153")
-    except Exception as e:
-        logging.error(f"Failed to start UI command listener: {e}")
-
-async def entrypoint(ctx: agents.JobContext):
-    asyncio.create_task(start_ui_command_listener())
-    global chrome_server, _mem0_client, _mem0_user
-
-    # Initialize Chrome MCP server
-    try:
-        logging.info("Initializing Chrome MCP server...")
-        chrome_server = await create_chrome_server(auto_connect=True)
-
-        # Set chrome server in tools modules
-        chrome_tools_module.set_chrome_server(chrome_server)
-        computer_use.set_chrome_tools(chrome_tools_module)
-
-        logging.info("Chrome MCP server initialized successfully")
-        update_ui("startup")
-    except Exception as e:
-        logging.warning(f"Failed to initialize Chrome MCP (will use fallback): {e}")
-        chrome_server = None
-        update_ui("startup")
-
-    async def shutdown_hook(chat_ctx: ChatContext, mem0, memory_str: str, user_name: str):
-        if mem0 is None:
-            logging.warning("Mem0 client not initialized — skipping memory save")
-            return
-        logging.info("Shutting down, saving chat context to memory...")
-
-        messages_formatted = [
-        ]
-
-        messages_attr = getattr(chat_ctx, 'messages', chat_ctx.items)
-        items = messages_attr() if callable(messages_attr) else messages_attr
-        logging.info(f"Chat context messages: {items}")
-
-        for item in items:
-            if not hasattr(item, 'content') or not hasattr(item, 'role'):
-                continue
-
-            content_str = ''.join(item.content) if isinstance(item.content, list) else str(item.content)
-
-            if memory_str and memory_str in content_str:
-                continue
-
-            if item.role in ['user', 'assistant']:
-                messages_formatted.append({
-                    "role": item.role,
-                    "content": content_str.strip()
-                })
-
-        logging.info(f"Formatted messages to add to memory: {messages_formatted}")
-        if messages_formatted:
-            try:
-                # MemoryClient is sync (blocking) — run in thread to avoid blocking event loop
-                await asyncio.to_thread(mem0.add, messages_formatted, user_id=user_name)
-                logging.info("Chat context saved to memory (cloud).")
-            except Exception as e:
-                logging.error(f"Failed to save chat context to mem0: {e}")
-        else:
-            logging.info("No new chat context to save to memory.")
-
-
-    from livekit.agents.voice.agent_session import TurnHandlingOptions
-
-    session = AgentSession(
-        turn_handling=TurnHandlingOptions(
-            interruption={"enabled": True, "mode": "vad", "min_duration": 0.15, "min_words": 1}
-        )
-    )
-
-    # --- Mem0 Cloud (Option 2) — uses MEM0_API_KEY, managed embeddings/LLM ---
-    # Previously used local Qdrant (Memory.from_config with gemini-2.0-flash-001 /
-    # text-embedding-004) which 404s and has dims mismatch (1536 vs 768). Cloud is verified working.
-    _mem0_api_key = os.getenv("MEM0_API_KEY")
-    if not _mem0_api_key:
-        logging.warning("MEM0_API_KEY not set — memories will not persist")
-        mem0 = None
-        _mem0_client = None
-    else:
-        try:
-            mem0 = MemoryClient(api_key=_mem0_api_key)
-            _mem0_client = mem0  # for save_memory/recall_memory tools
-            logging.info("Mem0 cloud client initialized")
-        except Exception as e:
-            logging.error(f"Failed to init mem0 cloud: {e}")
-            mem0 = None
-            _mem0_client = None
-
-    # Resolve user_name: prefer room metadata, then Casper_USER_ID (.env), then legacy J.A.R.V.I.S._USER_ID, fallback Rishab/Admin
-    user_name = (
-        ctx.room.metadata
-        if ctx.room.metadata
-        else os.getenv("Casper_USER_ID") or os.getenv("J.A.R.V.I.S._USER_ID") or os.getenv("CASPER_USER_ID") or "Rishab"
-    )
-    _mem0_user = user_name  # for save_memory/recall_memory tools
-
-    raw_results = {} if mem0 is None else await asyncio.to_thread(mem0.get_all, filters={'user_id': user_name})
-    results = raw_results.get('results', []) if isinstance(raw_results, dict) else raw_results
-
-    initial_ctx = ChatContext()
-    memory_str = ''
-
-    if results:
-        memories = [
-            {
-                "memory": result["memory"],
-                "updated_at": result["updated_at"]
-            }
-            for result in results
-        ]
-        memory_str = json.dumps(memories)
-        logging.info(f"Memories: {memory_str}")
-        initial_ctx.add_message(
-            role="assistant",
-            content=f"The user's name is {user_name}, and this is relvant context about him: {memory_str}."
-        )
-
-    # Inject personal info defined in the dashboard if available
-    personal_info = os.getenv('USER_PERSONAL_INFO')
-    if personal_info:
-        initial_ctx.add_message(
-            role="system",
-            content=f"User's Personal Background & Preferences: {personal_info}"
-        )
-
-    # Prompt the assistant to greet the user
-    # Note: Gemini Realtime drops system messages in chat_ctx, so we don't add SESSION_INSTRUCTION there.
-    # Instead, we will update the model's instructions directly after creating the agent.
-    initial_ctx.add_message(
-        role="user",
-        content="Hello casper, please greet me and speak your greeting out loud."
-    )
-
-    agent = Assistant(chat_ctx=initial_ctx, lazy_load_chrome=False)
-    
-    # Combine all instructions and update the RealtimeModel directly
-    combined_instructions = AGENT_INSTRUCTION
-    if personal_info:
-        combined_instructions += f"\n\nUser's Personal Background & Preferences: {personal_info}"
-    combined_instructions += f"\n\n{SESSION_INSTRUCTION}"
-    if hasattr(agent.llm, "update_instructions"):
-        agent.llm.update_instructions(combined_instructions)
-
-    # Start the overlay UI
-    start_ui()
-
-    interaction_state = {"last_active": asyncio.get_event_loop().time(), "state": "none"}
-    mic_active = True
-    user_is_speaking = False
-
-    def refresh_ui_state():
-        nonlocal user_is_speaking, mic_active
-        current_agent_state = getattr(session, "agent_state", None)
-        if not mic_active:
-            target = "waiting"
-        elif current_agent_state == "speaking":
-            target = "speaking"
-        elif current_agent_state == "thinking":
-            target = "thinking"
-        elif user_is_speaking:
-            target = "listening"
-        else:
-            target = "idle"
-
-        if interaction_state["state"] != target:
-            update_ui(target)
-            interaction_state["state"] = target
-            interaction_state["last_active"] = asyncio.get_event_loop().time()
-
-    @session.on("user_state_changed")
-    def on_user_state_changed(event):
-        nonlocal user_is_speaking
-        print(f">>> USER STATE CHANGED: {event.new_state} <<<")
-        if event.new_state == "speaking":
-            user_is_speaking = True
-            refresh_ui_state()
-        else:
-            user_is_speaking = False
-            refresh_ui_state()
-
-    @session.on("agent_state_changed")
-    def on_agent_state_changed(event):
-        print(f">>> AGENT STATE CHANGED: {event.new_state} <<<")
-        refresh_ui_state()
-
-    # Watchdog: Monitors UI state timeouts to return to standby (idle or waiting)
-    async def ui_watchdog():
-        import ui_state
-        await asyncio.sleep(1) # Fast boot check
-        
-        while True:
-            await asyncio.sleep(0.5)
-            try:
-                if ui_state.current_custom_text:
-                    custom_text = ui_state.current_custom_text
-                    ui_state.current_custom_text = None
-                    update_ui(f"custom:{custom_text}")
-                    interaction_state["last_active"] = asyncio.get_event_loop().time()
-                    interaction_state["state"] = "custom"
-                
-                now = asyncio.get_event_loop().time()
-                # If thinking or custom text inactive for 8 seconds, return to normal state
-                if interaction_state["state"] in ["thinking", "custom"] and now - interaction_state["last_active"] > 8.0:
-                    refresh_ui_state()
-            except Exception as e:
-                pass
-
-    asyncio.create_task(ui_watchdog())
-
-    # --- CONTINUOUS AMBIENT SCREEN VISION & CIRCLE GESTURE TRACKING ---
-    screen_streamer = None
-    try:
-        screen_streamer = ScreenVideoInput(target_fps=1.0, max_dim=1024)
-        session.input.video = screen_streamer
-        logging.info("Continuous screen vision streamer attached to session.input.video")
-    except Exception as e:
-        logging.warning(f"Could not attach screen video streamer: {e}")
-
-    gesture_detector = None
-    try:
-        gesture_detector = CircleGestureDetector()
-        gesture_detector.start()
-        logging.info("Autonomous circle gesture detector started")
-    except Exception as e:
-        logging.warning(f"Could not start circle gesture detector: {e}")
-
-    await session.start(
-        room=ctx.room,
-        agent=agent,
-        room_input_options=RoomInputOptions(
-            # LiveKit Cloud enhanced noise cancellation
-            # Local screen capture is streamed via ScreenVideoInput, not participant camera
-            video_enabled=False,
-            noise_cancellation=noise_cancellation.BVC(),
-        ),
-    )
-
-    await ctx.connect()
-
-    # --- MUTE KEY TOGGLE INITIALIZATION ---
-    muteable_audio = None
-    if session.input.audio:
-        muteable_audio = MuteableAudioInput(session.input.audio)
-        session.input.audio = muteable_audio
-
-    mic_active = True
-    refresh_ui_state()
-
-    async def toggle_mic_worker():
-        nonlocal mic_active
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-        except Exception as e:
-            logging.error(f"Cannot initialize user32 for Mute Toggle: {e}")
-            return
-
-        key_was_down = False
-
-        while True:
-            await asyncio.sleep(0.025)  # 25ms polling for responsive edge detection
-            try:
-                # VK_MENU = 0x12 (Alt), VK_TAB = 0x09 (Tab)
-                alt_down = bool(user32.GetAsyncKeyState(0x12) & 0x8000)
-                tab_down = bool(user32.GetAsyncKeyState(0x09) & 0x8000)
-
-                # Ignore Alt if Tab is also pressed (prevents Alt-Tab from muting)
-                key_down = alt_down and not tab_down
-
-                # Rising edge trigger: only toggle on key down transition
-                if key_down and not key_was_down:
-                    mic_active = not mic_active
-                    if muteable_audio:
-                        muteable_audio.muted = not mic_active
-                    refresh_ui_state()
-                    logging.info(f"Mute Key Toggle: mic_active={mic_active}")
-
-                key_was_down = key_down
-
-            except Exception as e:
-                logging.error(f"Error in toggle_mic_worker: {e}")
-
-    asyncio.create_task(toggle_mic_worker())
-
-
-
-    # generate_reply is incompatible with Gemini Realtime API and omitted here.
-
-    # Add Chrome cleanup to shutdown — use session.history (global) if available, fallback to agent ctx
-    async def full_shutdown():
-        # Stop screen streamer and gesture detector cleanly
-        if screen_streamer:
-            try:
-                screen_streamer.stop()
-            except Exception:
-                pass
-        if gesture_detector:
-            try:
-                gesture_detector.stop()
-            except Exception:
-                pass
-
-        # Try session.history (LiveKit 1.7+ holds full conversation), fallback to agent chat_ctx
-        try:
-            hist = getattr(session, "history", None)
-            chat_for_save = hist() if callable(hist) else hist
-            if chat_for_save is None:
-                chat_for_save = getattr(session, "_chat_ctx", None) or session._agent.chat_ctx
-        except Exception:
-            chat_for_save = session._agent.chat_ctx
-        await shutdown_hook(chat_for_save, mem0, memory_str, user_name)
-        if chrome_server:
-            try:
-                await chrome_server.cleanup()
-                logging.info("Chrome MCP server cleaned up")
-            except Exception as e:
-                logging.error(f"Error cleaning up Chrome server: {e}")
-
-    ctx.add_shutdown_callback(full_shutdown)
-
-if __name__ == "__main__":
-    try:
-        agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
-    except Exception as e:
-        write_crash_log(f"run_app error: {traceback.format_exc()}")
-
-
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+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
+nezBjPgLPtM2x6bTAbRTkQ==
+-----END CASPER ENCRYPTED FILE-----

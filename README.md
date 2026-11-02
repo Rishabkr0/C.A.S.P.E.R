@@ -40,27 +40,40 @@ Casper doesn't hide in a terminal. It features a frameless, transparent PySide6 
 
 ## 🎯 Getting Started (Quick Setup)
 
-1. **Prerequisites:** 
-   - Install [Node.js](https://nodejs.org/) (v16+) for the Chrome MCP Server.
-   - Install Python 3.10+.
-2. **Install Dependencies:**
-   ```bash
-   # Create and activate a virtual environment
-   python -m venv .venv
-   .venv\Scripts\activate
-   
-   # Install Python requirements
-   pip install -r requirements.txt
-   ```
-3. **Configuration:**
-   - Create a `.env` file in the root directory.
-   - Add your API Keys, LiveKit Secret, and LiveKit URL.
-   - Run `python generate_token.py` (if available) to authenticate Google Workspace tools.
-4. **Run Casper:**
-   ```bash
-   python agent.py
-   ```
-   *Your Casper desktop avatar will appear and start listening!*
+### 🔐 0. Repository Decryption (Zero-Trust AES-256-GCM)
+Source code in this repository is encrypted with AES-256-GCM on GitHub and in ZIP downloads.
+If you have cloned the repository or unzipped it, unlock the files using your master key:
+```bash
+python casper_crypt.py unlock --key <YOUR_MASTER_KEY>
+```
+*(If working on your authorized development machine where `.casper_key` is present, files are automatically decrypted.)*
+
+---
+
+### 1. Prerequisites
+- Install [Node.js](https://nodejs.org/) (v16+) for the Chrome MCP Server.
+- Install Python 3.10+.
+
+### 2. Install Dependencies
+```bash
+# Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install Python requirements
+pip install -r requirements.txt
+```
+
+### 3. Configuration
+- Create a `.env` file in the root directory.
+- Add your API Keys, LiveKit Secret, and LiveKit URL.
+- Run `python generate_token.py` (if available) to authenticate Google Workspace tools.
+
+### 4. Run Casper
+```bash
+python agent.py
+```
+*Your Casper desktop avatar will appear and start listening!*
 
 ---
 
@@ -75,23 +88,10 @@ Comprehensive guides and architectural references are located in the [`docs/`](d
 
 ---
 
-## 🧪 Testing
+## 🔒 Security & Encryption Architecture
 
-To verify that Casper's integrations and background worker are functioning correctly, run the test suite:
-```bash
-# Test Chrome MCP integration
-python tests/test_chrome_integration.py
-
-# Test Background Worker Agent
-python tests/test_worker.py
-
-# Test Memory Client (Mem0)
-python tests/test_mem0.py
-```
-
----
-
-## 📜 Licensing
-
-- **Casper Source Code:** Proprietary & Confidential. All Rights Reserved.
-- **Third-Party Libraries:** Casper uses several open-source libraries (MIT, Apache 2.0, LGPL, etc.). Please see `thirdparty_licenses/third_party_notices.md` for full attribution and details.
+Casper uses **casper-crypt**, an integrated AES-256-GCM authenticated Git clean/smudge filter system:
+* **GitHub Repository:** Every source file (`.py`, `.html`, `.js`, `.css`, etc.) is encrypted ciphertext with an authentication tag.
+* **ZIP Downloads:** Anyone downloading the ZIP archive gets encrypted ciphertext that cannot be viewed without the master key.
+* **Cloned Repositories:** Standard `git clone` downloads encrypted files until unlocked with `python casper_crypt.py unlock`.
+* **Local Workspace:** Seamless transparent decryption for authorized developers with `.casper_key`.

@@ -1,60 +1,33 @@
-{
-  "name": "electron_dashboard",
-  "version": "1.0.0",
-  "description": "",
-  "main": "main.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron .",
-    "dist": "electron-builder --win"
-  },
-  "build": {
-    "appId": "com.casper.dashboard",
-    "productName": "Casper",
-    "win": {
-      "target": "nsis",
-      "icon": "icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "license": "build/license.txt",
-      "installerSidebar": "build/installerSidebar.bmp",
-      "installerHeader": "build/installerHeader.bmp",
-      "uninstallerSidebar": "build/installerSidebar.bmp"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "Rishabkr0",
-      "repo": "C.A.S.P.E.R"
-    },
-    "extraResources": [
-      {
-        "from": "..",
-        "to": ".",
-        "filter": [
-          ".env.example",
-          "jarvis_ui.html",
-          "jarvis_ui_side.html",
-          "dist/casper_backend/**/*",
-          "bin/**/*"
-        ]
-      }
-    ]
-  },
-  "keywords": [],
-  "author": "Rishab",
-  "license": "ISC",
-  "type": "commonjs",
-  "devDependencies": {
-    "electron": "^43.1.0",
-    "electron-builder": "^26.15.3"
-  },
-  "dependencies": {
-    "electron-updater": "^6.8.9"
-  }
-}
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+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
+-----END CASPER ENCRYPTED FILE-----

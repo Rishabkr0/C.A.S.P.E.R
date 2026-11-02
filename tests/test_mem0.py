@@ -1,60 +1,35 @@
-import sys
-import os
-from pathlib import Path
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-from dotenv import load_dotenv
-load_dotenv(ROOT_DIR / ".env")
-from mem0 import MemoryClient
-import logging
-import json
-
-user_name = 'David'
-mem0 = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
-
-def add_memory():
-    
-    messages_formatted = [
-        {        "role": "user",
-            "content": "I really like Linkin Park."
-        },
-        {
-            "role": "assistant",
-            "content": "That is a good choice."
-        },
-        {
-            "role": "user",
-            "content": "I think so too."
-        },
-        {
-            "role": "assistant",
-            "content": "What is your favorite song by them?"
-        },
-    ]
-
-    mem0.add(messages_formatted, user_id="David")
-
-def get_memory_by_query():
-    client = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
-    query = f"What are {user_name}'s preferences?"
-    # mem0ai 2.0.19 requires filters={'user_id': ...} (top-level user_id rejected)
-    res = client.search(query, filters={'user_id': user_name})
-    results = res.get("results", []) if isinstance(res, dict) else res
-
-    memories = [
-            {
-                "memory": result["memory"],
-                "updated_at": result["updated_at"]
-            }
-            for result in results
-        ]
-    memories_str = json.dumps(memories)
-    print(f"Memories: {memories_str}")
-    return memories_str
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    get_memory_by_query()
+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
+-----END CASPER ENCRYPTED FILE-----

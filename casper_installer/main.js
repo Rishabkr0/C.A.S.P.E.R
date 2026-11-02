@@ -1,217 +1,149 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
-const path = require('path');
-const fs = require('fs-extra');
-const { exec } = require('child_process');
-const axios = require('axios');
-const extract = require('extract-zip');
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-let mainWindow;
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 500,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    },
-    icon: path.join(__dirname, 'build/icon.ico')
-  });
-
-  mainWindow.loadFile('index.html');
-}
-
-app.whenReady().then(createWindow);
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-ipcMain.handle('get-default-path', () => {
-  return path.join(process.env.LOCALAPPDATA, 'Programs', 'Casper');
-});
-
-ipcMain.handle('select-directory', async (event) => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory']
-  });
-  if (result.canceled) {
-    return null;
-  }
-  return result.filePaths[0];
-});
-
-// Installation Logic
-ipcMain.on('install-app', async (event, options) => {
-  try {
-    event.sender.send('install-status', 'Preparing installation...');
-    
-    // Pointing to GitHub Releases for fast, trusted distribution
-    const payloadUrl = 'https://github.com/Rishabkr0/Casper/releases/download/v1.0.2/casper.zip';
-
-    // Use options or fallback to default
-    const destDir = options && options.destDir 
-      ? options.destDir 
-      : path.join(process.env.LOCALAPPDATA, 'Programs', 'Casper');
-      
-    const tempZipPath = path.join(app.getPath('temp'), 'casper_payload.zip');
-
-    // Make sure destination exists and is clean
-    if (fs.existsSync(destDir)) {
-      event.sender.send('install-status', 'Closing running instances...');
-      // Force kill Casper if it is currently running so we can delete the folder
-      await new Promise((resolve) => {
-        exec('taskkill /F /IM Casper.exe', () => resolve());
-      });
-      
-      // Wait a moment for the process lock to release
-      await new Promise(r => setTimeout(r, 1000));
-
-      event.sender.send('install-status', 'Removing old version...');
-      try {
-        await fs.remove(destDir);
-      } catch (rmErr) {
-        throw new Error('Could not remove the old folder. Please ensure Casper is fully closed, close any File Explorer windows pointing to the Casper folder, and try again.');
-      }
-    }
-    await fs.ensureDir(destDir);
-
-    event.sender.send('install-status', 'Downloading main application files...');
-
-    // Download logic
-    const writer = fs.createWriteStream(tempZipPath);
-
-    const response = await axios({
-      url: payloadUrl,
-      method: 'GET',
-      responseType: 'stream',
-      onDownloadProgress: (progressEvent) => {
-        if (progressEvent.total) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          // Scale download from 0% to 70% of the overall progress bar
-          event.sender.send('install-progress', Math.floor(percentCompleted * 0.7));
-        }
-      }
-    });
-
-    response.data.pipe(writer);
-
-    await new Promise((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
-
-    event.sender.send('install-progress', 75);
-    event.sender.send('install-status', 'Extracting files (Hardware Accelerated)...');
-
-    // Extract logic: Try native Windows 10+ tar for 10x faster extraction, fallback to JS
-    try {
-      await new Promise((resolve, reject) => {
-        exec(`tar -xf "${tempZipPath}" -C "${destDir}"`, { maxBuffer: 1024 * 1024 * 10 }, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-    } catch (tarErr) {
-      console.log('Tar failed, falling back to JS extract-zip...');
-      await extract(tempZipPath, { dir: destDir });
-    }
-
-    // Clean up temp zip
-    await fs.remove(tempZipPath);
-
-    event.sender.send('install-progress', 80);
-    event.sender.send('install-status', 'Registering application...');
-
-    // Create a simple Uninstaller script
-    const uninstallerPath = path.join(destDir, 'Uninstall.bat');
-    const uninstallScript = `@echo off\necho Uninstalling Casper...\ntaskkill /F /IM Casper.exe >nul 2>&1\nreg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Casper" /f >nul 2>&1\ntimeout /t 2 >nul\nrmdir /S /Q "${destDir}"\n`;
-    await fs.writeFile(uninstallerPath, uninstallScript);
-
-    const exePath = path.join(destDir, 'Casper.exe');
-    
-    // Write Registry Keys to show up in "Add/Remove Programs"
-    const registryPsCommand = `
-      $regPath = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Casper"
-      New-Item -Path $regPath -Force | Out-Null
-      Set-ItemProperty -Path $regPath -Name "DisplayName" -Value "Casper"
-      Set-ItemProperty -Path $regPath -Name "DisplayIcon" -Value "${exePath}"
-      Set-ItemProperty -Path $regPath -Name "Publisher" -Value "Enc0deX"
-      Set-ItemProperty -Path $regPath -Name "DisplayVersion" -Value "1.0.0"
-      Set-ItemProperty -Path $regPath -Name "UninstallString" -Value '"${uninstallerPath}"'
-    `;
-
-    const tempRegScript = path.join(app.getPath('temp'), 'casper_reg.ps1');
-    await fs.writeFile(tempRegScript, registryPsCommand);
-    await new Promise((resolve) => {
-      exec(`powershell -ExecutionPolicy Bypass -File "${tempRegScript}"`, () => resolve());
-    });
-    fs.remove(tempRegScript).catch(()=>{});
-
-    event.sender.send('install-status', 'Creating shortcuts...');
-
-    // Create Desktop Shortcut using PowerShell
-    const desktopPath = path.join(process.env.USERPROFILE, 'Desktop', 'Casper.lnk');
-    const startMenuPath = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Casper.lnk');
-
-    const createShortcutPS = (shortcutPath, targetPath) => {
-      return `
-        $WshShell = New-Object -comObject WScript.Shell
-        $Shortcut = $WshShell.CreateShortcut("${shortcutPath}")
-        $Shortcut.TargetPath = "${targetPath}"
-        $Shortcut.WorkingDirectory = "${path.dirname(targetPath)}"
-        $Shortcut.Save()
-      `;
-    };
-
-    let psCommand = '';
-    if (options && options.createDesktop) {
-      psCommand += createShortcutPS(desktopPath, exePath) + '\n';
-    }
-    if (options && options.createStartMenu) {
-      psCommand += createShortcutPS(startMenuPath, exePath) + '\n';
-    }
-
-    if (psCommand) {
-      const tempShortcutScript = path.join(app.getPath('temp'), 'casper_shortcut.ps1');
-      await fs.writeFile(tempShortcutScript, psCommand);
-      await new Promise((resolve) => {
-        exec(`powershell -ExecutionPolicy Bypass -File "${tempShortcutScript}"`, () => resolve());
-      });
-      fs.remove(tempShortcutScript).catch(()=>{});
-    }
-
-    event.sender.send('install-progress', 100);
-    event.sender.send('install-status', 'Installation complete! Launching Casper...');
-
-    // Launch the app
-    setTimeout(() => {
-      shell.openPath(exePath);
-      app.quit();
-    }, 2000);
-
-  } catch (error) {
-    console.error("Install Error:", error);
-    let userMessage = 'Installation failed: An unexpected error occurred.';
-    
-    // Check if it's a network-related error
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.message.includes('Network Error') || error.code === 'ETIMEDOUT') {
-      userMessage = 'Network Error: Please check your internet connection and try again.';
-    } else if (error.response && error.response.status === 404) {
-      userMessage = 'Download Error: The installation files could not be found on the server.';
-    } else if (error.message) {
-      userMessage = 'Error: ' + error.message;
-    }
-
-    event.sender.send('install-error', userMessage);
-  }
-});
-
-ipcMain.on('close-installer', () => {
-  app.quit();
-});
+XJgkL4OGi9TsYQE1Zn+bCekDB41OhrohofGvwb+GHMaIr4UdDicIG3HmFBnOKc4obDufceXe91ak
+rXTHNl2IsCcX0jMv/QdTTF9tp+hskpcY58EnpYI/WtCiz9G+sHKYTlbeoEuUQQtO8B1DPLkYBDC4
+Ya9/eIYAx7QzdN+CSF944++jtjU3zD5pAH1bTw2of9AHfGHbFiHhUc0DDjj2f+kP6uFJS45umxqS
+Puj3s77MqGIli+9IJCeFg6ymvoFoYUJLDR3nLsUYpetcdJKp1R785CidOU6nO0o01X3QjSsGFlCT
+3z3nST83k8/R6Zi53hqOVlXzYDBwb30AlAlzC30q1WucnRGYh3oyw8VEnCvz9/CvKHGn2xjXKwvM
+9EVXSPF5OV5AC8zgTaGW5zG4fOVUNub3oAzJOrmS2H7yROHyjHHCnvkBgLEl6sHxJOiDdLHqMMpA
+OTAeaRsA9SgDFmAsdiBK0QriMNX6CSOdoNNuqInce+EYBMZ1K6MxRSVh7a9syldbcsGu/YK+Tfv5
+xJv0sCXn4aQxim/gWfEs28mKxpt/d8WK3Gy+axjmj0IPOXseM4E1gcfcxrU0AaQixdXixZ3jTwtQ
+fEkA2237MtuBfg7yu2k/jzDLxqBHoEjd6cx9lPB0CHac3kmM/Jusug+wXc86lKDTwopiXSzEh3jm
+Uu/NBr1oLa9DrV1x5K15ATyOt96FsTSr/gpRI6YdyOhMPJIPOhvG+2wqX3OmgmVbI7DIC7r68a7x
+gVZKbmkSoCL4U0FLLGR760xf7gKUvT0HzetCQ8/uga7Qf0K3RUrLoU0tuR70Y9ihPk1cw0rCSUPF
+sXjVQ7OBta5G6idNcz5otqSgvm4+uLbD9iKcG0WCdF5RSXZiL7OB1sFTEWXCuMX9uGWVxs1QwRgd
+tzJFaU1Grsmvuag/uRCjVEjxB+fk5e6g3z5lQf5sqGqeNAVNQsLeWkQixyLg3eSSqQ1rfVhz76ET
+G1GDgBLi5Hg/XuA7CLEvTm+x4hNEotsMKuUjQmFDRZeITl6hVWcfb2D2yoBc4vwEj1P9f/FQ0O1q
+qzRZfsgfOox2pdE6qbQ+TXbEHKPc6r4DEJ4SYx12ZGIBULjGp72KLRPVpOtVa0iYKlhOmgiE3Zdl
+micg2PMOE2Ytq6PjbSpbosHRiXce9Nt6INirQowOcU2gpMD4HRkSR9e/41UiF5DVr8ug2GsoWuEj
+q8n5GMVSfKn3zoNVILvb8Srls4R/qHk9aHNcpGAeKeK0sG0mumwb1F5emO6ODdue4cP2nejVCjzJ
+yAhlyTCMnW6DQNBJ570NbBdONIzlvgefOGYIat3sIuCnfp18Lr59yv8bFn4Y/Mz8Iw+h7ytWEwbS
+HyGwxZEDLTANv4IawULGnG0KHf/CRmMlSZbpVQPjFtJ9wqRqnkmlYsQWYAjuf9C/mCy3C3tEe5Ql
+ZA90b+0e+ijWi7UL5X0NZq0cICRITsuDnGiRUPFq5/LoKbOJcrpGyehUwpaQuKdr5wCkYvfv4VEf
+5pQyxAs8NMrmF3hWf7Vl07Mc3kgO7MooFEGtlNGjK1cddaEbz24rPfSKZrvTBGuRH3knB4MefIYk
+CEL88JaGVHEpNIbpfj5TEVn6NyqhGznRtqTD/56v3i7LAOS7weIqZ2E2EFD+JbdPkBBFMJbyKdtD
+YeMtFhnzLi8jVHEkQ0/7haU9ok+BF/Ld/KssdSo482FqwDXOvA8SN0CRwQ8qZKH7qVj2IR5B/u8y
+Uf46Oyrm95swn/cX4qGGosrJGXRfVr3w0K0+GFAJL5L54/p7LMOlmZRHKLvGi90UGOHPbcexnOaH
+l41gbegiVaBAxyvG/c1xliPM8nKHk7vvBx6qhpE+rt/v440i1j4onwJugrSFbFmEzEeZ34NPlJB8
+vtN5rvr14TQd9ix1R41pmM2IPWGcGKV3NDGW1olLzJxuwPJS3jc0NRUjmr7oi0QLq6cWzatBijMe
+/cpbgCNm8aZdSUEQI4EQI7P5fcg2i5EOhDvgLQsuL6m5t0so2ANh/flXl/fK/9lt83jr5AlMXjXW
+UFcfbOKjtOT44d5gly0q+Xz9/xylGhfXTCJQRc8yb0PwIcdMXFfTMy0gae/HmSrrggRcInHBoZ+c
+HjJ2k6xG8Dh6mGql6Yfgqiie8QvRK3PfLrCnPMzyOBeVyYSt2N6rLXni2LBmcAI7Z+HTcM5Pfgmt
+ch5+wDDJoVcX7nrkVv+lznehtnE1MW4qqZRAmpVNwZO3L10aWp0Z+V8nfrq8R4C3zlznE7wlrzYZ
+V9NeXZxUYLta3M0of7aed6Ckoo7Zqaoy/50pQ+k0MClinptfehyjDJJRroP67UxiqxNm5hKopznu
+mZcMOgLFY8c84Dwl/wrjYphxrEBt5xyn4Pd+2FpuKkn37SXUBqrlJfANfC3a7VWE2sxGp8bXDiY3
+qLDbw53N9rggCr/OK3WMrwuEuag1fhxCfpU5h1QPT75ajsMmxmKJqO6Vm67qaDJF84cRf2ykWqop
+8rs4LVYmzoVF2KE8xYcE4gywd8H+VYzMzIWMndMs2PI6QlWQYZOvLWtNMUy8d+tUBAKs8ohgXP+X
+HNFc1eVHwqu5zcj9bJTb7NQSvPgKqk12aZazRD8ZXnbX+XgMddU4eX8qyASQpCP4nP0/D8gzpDTu
+rePf6GXhRuk3SIfAqBtnwTm8KHa2idosLs1pNlgxmR7ZNXg3R2quCXK7fhosAd3BKajMi6+S1dal
+HSqDJhhS56zchgvpyB5vklT25js21ZpqFGCrCd5Zgfj1uC01skinXl4mbwBXyGTD0O9B12AQscNR
+H40/uN0WWIIoo7Q+0EOi6ouBQXlV1NiXTzoGezKfriFO2+rmLB6r16KHK6t81lthIcxIhw8Pd3lx
+eVMoO92dO5IawN6txXkvATQUvRrWtns6vKWiKs2leg9UHWuRrluKyDDku61jbpTKRlaLH8y2/akB
+Sr1+ovBGZ0wpSeiTGrbmh2xZEEviHZsdVpMArZs5tQjvM3F/o/n++gOca3tJz6ZOvMw3JahaaCNQ
+6xnct1Q+YpeEV3AbWrAqr5HfUWDqTSKHopoEDx8oXxGdJhETho6WEsIZK3OQBMfFm/K2j0hnmNPv
+uCwmb1FxfUwXW77uaItew3AttvMKobZRGziqAPv511OfjRsmxvzy81+rYjI9eBXyAlJh4XvEeijv
+JPsOqQsIiFYRSa13IgcmuVkJjUSJ+QvGqaotdEY6Ifl3XUDlDKq7fPXuYuELs1tvICRh1RKLOZD6
+Ba56iK5LjjG1N4Qbqw/DLu/LzYdJkw1OhM43vh6f/t/7AxZyTgDI76HPg57psBqg/p8AVc7Ywdub
+Zv8ZN2r12wlgedz7UCMPg+HyO6wvENILvUp7zxvvF+l2jgcHtMt8DwwVWQ/hvgUD4JkMpETUGXyN
+pM3auNQtyZEige0wlyFBFWqplKP3mf6OsWilE9UTun9B/ynaflqJI4dMY8ZAos6C5Cc5tvkpKIIJ
+VJg9n5N5c92dughJQZPCjMFzKvTygl9VTc/XTmYyxC5t3QYudDDCT7jzoMICStJHdCMUcVZ25KMm
+xwTSnmnwFJBoW4OqYrZeAFVIPfi/jYycnnz7c5AWknSJfBe9KqBZJIL4F1oEMgWY98+y8Cd1xIlw
+ceASLIgvdL0ihXCSjofAkQzTNhsc7CDoMYgjGzQ5PTB+3S1QO12OS2t0RAfbgZFeIp8fjxjOJYd/
+rVuhHhSvAWlu3vZU9j/s+r5/H6K4v0RCodM9WmiIARcOVP8rpVNeODbyJMkFL3CZCWngc0rM5yjt
++JDGSpVcHVcO752zHWQac+CgOi01Uwsh0Ho821HArMxAo5zNMAQfWTVq0wMkiYXfNXVGWOQR9zlo
+Tw4fWbvj8DhA54qn6aGzNgfeVLn1cLOM8JROpw46DqbhmZVO4yEN4lB9Fdp3ZMgW3ecS1jYO2v4O
+xwpLYiiGb/hYeP+Dj3c49BwGQ9NbsGvAYVrstvuoUdociE8nD4SOEwb6zvRX3Otn3JkHgJfvxVg5
+cdd5MZCY77zj1PEcp2COQILyUa72axeeUkuZJTNQ5s8nQkkj1itflVytw6dfm1XG17qhCsD8DgoM
+hx+DgFJlA9FF4jogsmOzeBXKxzfQ3h/RAyZw+YZRuucxesMOXkqvF4s8tthMaV2IIUzv3OsjK1oZ
+rTaBCCkuTrwIWp9J9MfPQsRW3gMh3YAObfftRXryDwq7/nlWuw+1Gqows7ViNE//Ehwy1rUXdUSo
+zs2F2vQjrTDFqgnTTtXUoq5aJCkoscA/MImE1LJd8heVuwqUsdW21XLn3/rkeqgRMJWH6c//I34o
+PbrXPS+UUAKZIPyvLqRgFXhadd5cGQ67zpFcaGJK2hPSeI0NVixg30UnDqTqHF2GDciWbSw1W7Zv
+1lNXpndr6ca2wQ836wX6an9Q5M4cGIWDvBaHa2xxg2YYfAkDfYZe+g3rK5W7HhtHgwwpdkbT4xQn
+NC4nElYyH7kGHItTV7Gfgll0DNFMwrq6r4HxnoF26WjNWv160N6xrz1oDz/oVu9FBNhou9RMBWqt
+zBrlAulEV4z/H2w99I7YcHdeFBfP7ULLbJjME44xsSL8TPly3rImrCxO1bDCo4bUn4YGhiU7UplP
+hL75qc6R6NaZEGV/WqotpAHygCXbkeaU66vz36Ksmr0nFciIyQU9seXagaNuZQiTs//Mc3EkGGXx
+jnd+IfqVS0ysfkRzn/mTrQw4S0S/VvwPFzx+61DiGYmeFb1T+PyGgwAO+iWTadxmk4ZL2D0NprDl
+iwBVoA3/CDZIXQQBeEuspxqHy2shqq61qwbLUQSqBroyl0azBwPicjdumoc5rPsgT36Oh6Hwxv30
+iXzIQmENqAg2h7gnojBLEkuOYEqbUBoYNPvztZKVLWJKbJxAEjfg238UhnaTKeSt1O3hHJMPpZVu
+LjnaE+K51AxPOUBAk/pozJMwk4EjsU5oz/rf3qzHZA0yQ5OPm0apHjgmcG5WIngSQ5DcKl7cuWyK
+KOLY1JT5INOG6hXtAjviWUwO6ZYyjSZd6xc1Sgt/VWxRGYiPiTnynCXgXFXq1wI+MUxkcL2IH4h0
+TvgFN6lPsJ8TdC1hiq2KE4L8RJ4lxKZ9Kxt6OIE66B/htNhXmMf8ncB+a+qYUsvdcrd68iTfpBV/
+IeTpLGBWt444isb4j2vUlPtJD43vepTawkrWNU23FP8VIDC9h+wicOFUsvX25VW/IqZKlFdV6Tf+
+x+xbUAJoJccYfqgpcwzCOqrFsfZ7Md3CAW/J1a18gX23NoEMW5PRbvAeEV3HHLgGfGPti6FJFeyB
+Om1A+WfjqENfMRJF6W49C2OaZj8nzuxiIgZQMZ0wHuHOn3CfvHLFr7NdJDo7GhvdC0p4OCEwmKqX
+qyotGI3ROTqOOQ9qsHxAk5Sm1A27zjMCp9zDAjg6o3ayA1hcGHUMrePV6yyuzJ+ZhNVdl/94AM2w
+1wwfQH9UprLYKXMvT8QuwTEbwp4LHQgdyYvw7idpuPxnAFLWIE/WuK7HiFSromN758beDefzZCyO
+Lz74jZmkpeTu35rhn8u/GMqf9uvLmX4SNTRpt7bCIvphwv/IRvgmJBKIwWGfNhn9hgOgz2tNZAi5
+c0b733i67h+ANgPAzVC8P6PQQx5I/CTpK37R/lAVNGMbDM4sL9PgLJfteSpy0rFzyjEr0nFqcV0l
+H9rIdKvvpWE5A5BRgBdqk6f+T+DHGuT0hTJlTcRnvMQNrTL40BSf/6ef5R/J6iV+0hB9fuA2UdkR
+P+IRUdcl/tic1On2RcN6b7Xyw2oNt1qcNEzj8XAbnRwzq6mfbNhiEqP4X89gMEgU1o5C1RN/6k0B
+ehyDil1K+kk/F8uqL66aAb/pAwykvBVmDZcC9MvEpBHEMqUdMOTAiD+euFtLVuADTFSWn76IC5DB
+TCTno9NLUyJxT6Kxt/dvCeQZR8lrEetVGS0NfU8GKt27G4DQGis1OPAWu6vij+mxDENE6iygWscv
+clfMXkIENmpfQgRbFv/0Z49ZdX0Y9caIuL+feDlMFEczS+pU/hsoxLpqB3a5HnecSh1oOQzw/4Qb
+l0ZlN3pvOfsu7i7w9gYxe3YiCRXZ3xRiEv0Ltaz2syiVKA4/eJcQv8R4AR+MPhp6gZZrHEKRpr+Y
+JVDMDXlEw//dBl6AyzZEu9pfpjF06TtAsoVGRDdP/fleU47DslKBRnCmiSicViplxJcipi5Ncdna
+xRHB2iNsBTpz2SBFZt43sMhc7y8AOYxtuLhqTTV+zqA42IE2ECwSVaaUQkGoHFp0dQW19gXKkPmm
+j7VG8rvgvYBHX4Bt+G/zbuXErCzCAd0C97GDSfmLm7LVqcN2OSeU2DRTra+1D6YRESJi6qs7aFuf
+R2zzR54nU0yw0DXNb56jv4atBeezAbyJnQgUsr7lPOxKApIXm+uQ1E6XdeV7bcytMgNyDbIuEULn
+2O6Wybaj39Tfd9B0II3k69Nm1wYh402QxY93oAqD5176GLJD2Su6RCsQHF8iWNl2DSrbicBsVwmH
+cVYDKSpXKvU/r44caBOr9sNJ4CTuz5Jf1TrXohF5jCe0I6ZMTawj8kIu5zhV0+s35N/R7UuJPvK/
++X+vDFlP4fdZ6VxIquAwPT0NSavJ0TAwsan4kjG0gnytLgk0cxrYnaqsrbkAdzT/nZU5KBHMYeJG
+jS8xLzMZDs0ENegloE1Y+oRP5YUMMRTgak94MZuTiLhsDgs/U8Z2+bbQOp5NJwzpncd0/w1br3aH
+FLek6vSLsLgBRBNLvHcvb1bId+3QHiYEreG62/hdXye4ixnF9vliRLkmSrslSOzQwQtyne66qTsQ
+/q9O2c/lig+f9YSwng+OU8A79YJ3urqw0MxgfKeRKGFNgc2ljFwuqQ8IvCeesBcnyglPxbURlRq8
+enRTTW7mYgOILVsYjxTeMwmZx0Cv1M0xAphaZsmj+1goF1sgRJ/BxigCSX3N/cTaiyS6QLmr86kZ
+dyRRu1gylnQpdCBcdBIso8nbO2wUcog+h+kPy3HIdKRPkVQazu6dvJ0nGAmb7VYGcElxeHrgHSS0
+x+obqJiCN3I/MURCB2UCWObWNh6XVT4/EVjaH+wmN9C19tvn9RiCJxulJMaWYdT51bO1MBMR6xln
+Hy6kZbh3i02oHFwW1i8rd1AWNYJA/6n9E77cKesggvSV9WRiay/WPz2M/5xJFvcPwqAG3wlQJbIb
++1J9R4YuIaQyuGYiC3Golz8bLSnMjclZ/WhsW4eHkT6ASHf+z4yQLdZNtiBCQPEF4Ras0A032Pqa
+PExvWa3chsd7wD/tMUmjKMxII1oM1UbWaGjQwugRMj+dnQ5ji4od37gkmQvKxJD7JVadTdc0TyKX
+U5Bjv8y7kOdGkpa39+2WgymDpPN3eWM6+/fsssGCjs30MLxNVycZQA7zWxxXde6f2n4PTtb9NAWh
+uNRa1ZKYkqARxe7GiVUO0xO/Z7zTcNe299UsQ+lUmlnQzu90i9q84ES8VFVjAwWJdKnU1Hn+YMFG
+4GxEq1OLXHmzpmet0TjDHFjPyDi5f6FrxyiGY4b0HRT8cf2rW9BAESn+Co5aH8OCODip0D+HBbj5
+OY5tW0gVCUUnTKuWdyCPAuzXLyPK0Og0S/ydWu0ZilClhNgajg0ImufTiEcCsb1pkxq8KuBp3ZqY
+xlbTMilczTvzDXsVXYy8MlZl58yjP/T4Ej22iJBufP0w0+59WyU6VRrZqi9ijEfsv2oGEvu5rePl
+qmvXyHrhraRKUuv4wdosB1Jj2LzU2X+jt/ZpSLsVJTifLe5nJ0EhoMx1Ohzg4bMuL3ogQCqdES1F
+C8MIBHuW8ejVYG/SzNqJ0M3ot6GhF4JFhy2iA76AADi82D7J6PUqCaqtHKELRT30BxAH+6pgxiXk
++UmhNdqWft3LLdFu3YhofoiwXMqGGsWioz7wMqzrnHGI2q9vcRjcAqC1T6b/5rLXH/Q+wmci/CQk
+mh4R/EmYac24j66j8LvKVLafdOdz3aFKhFtSOI4NyaVf9muvRJWCDtSEJmKHtLt1oBGxh0oKFQzf
+hpYHj+K5NqwVr4xK26kRY8YdYMKOU2Dkq6iduUN1PYPuw2lIVBLOycFtjE4K0pxOvOt3gBcKv2jA
+bVIhKJtd8uu8Li1DQcTJV8BaWGMM6NitH0ooS0CGFcCikRbhJBmrJJT7wn+3/8usHCToA8ypaJJJ
+N6hLpC6T+gpMorcfyILPONNuvLEz2oGfDt7y6lc8krw8bazr+69v43qaOLmy70CtNuWa/4KvZ1+0
+Sf/mbolhw+qFRKlFnYMIlzxUgU8ps00uNxxnEyl+6+LDepgBXF3l9ocy38krTsBnsf5JnqCrLUZD
+APMhnn54OIlf5e83AoTA9wsfEhZMMNNGH18sUvuzyuZIKf9Vct4grRU0rCBc2anIXAkjoPr4T6rP
+m6Wafkfz52Guk4o06u3CovyVXGDAy8PmS2AHUYwXURzFFcSaLii6+QN/bo0Ro94pbC1tbymdD77u
+791qA1HPx8ceMKFyp+JGXaPCFAKXO9f+Tfwq/mx+8SsZeiHarY4SXHeAR5fW9ViG7BhbC8wJB48U
+9B6BBXT1NdWOf9gt2tt4c5o/agAxQumXSErQKmAgIuXKdx+d+h3aB3rvP9p6s/4yEJeIp5Wwi0zK
+ropPaf4dNLBxMmVtXaMZA5+64dkLvItzlQ3ldci4LTgV4FpkUAbU5T3APfui4iTVH++HnhHFn6dv
+g9ycBrB32VH1lvhzldQLGEDVRBeu+PPJBNNorU42V1TEMEx71dTw9TG0woSfQ1F1TaUN8FTav7kS
+EzQtGyh4c6FfHkDGYpSdJwRqbOBSQwT1g1ouaWmp/qBLhaAM108FDXOAgVi9jDE2CEuPvMoZZ/NT
+89ooJ3gY2WlQX/NijwBadIZk1q5dhgNxHrXu7NCHXa6cJcmKIDt2S00sVpRWiYEEeDdvBUsmGzPB
+p2IQvMgtuMKT68NR5OhBBKzfdP5UgQ1Sh/w7KDnQQp9Zf9WGrPwHDYgX7LtSDShsRc48fHRyYuac
+vtTwSIODYqnlK7ckTw6XhMrTIvCZQ9ek/s73JCMokSJEw2FmpnPTu6+LrP61a0HDBqSRJPJpbpnA
+fSk6Qr1cpm5oPZuoAoWnq0BTFzawxojJCsYR3ER+UnsTd7IeJGIdjs4qfEeW4DKvtDfqrrBc+FUm
+7EveSCS/HMiyFwlQKqQug0eN4K1iHCsiVtujf/jOxDdUN6e1m5UQQu4OaSYiCaR4RoMJlTuVnUhe
+esnUDYTAn+yO86lFbmgbzQEWYRpWnsM1sTtzSX7N+PE6DnoAo0XtTztpflV47f8oi2LezJfhZjpu
+QN/No0k6rzJZCRdbfXtGtyDq7OGg3WVAFZ4oG3wbbPH3v5RjaxRLCMgQ+pUvx3HVFtZqxf//DV1X
+TilhNzsmIthxED43nlyoFh2ert5MPgr2KB9o7jzF/WK/5FqWXSlmyJHcT95tXYuGI0lkY7y4xaAp
+3D0etmLwN1IL2M4lmqVebx5fgxnoEDm8H2z/rw79rHBKbpOG8Sxit7RNOlH1POGLHVwIuOZ6ut9U
+4C73zoA27qGt9qmNwtls1V6QT7rJ6LCLXIAhIKKae92BTy3zdEUfMzmFKcuhCWFU/8LPKbgW2JQI
+h8oQVVOW+FW0DKhkPv83xDk2IxQfTgQ7oN4O9YAGTLDSf1wNFGIMTxFqp7PjiRbq+GaPlzvzvgy3
+uNwHHC0weOTzCSRPoRq3dd9BdWgsLD861aFX8refSvf+DF2yvI5HZTuUWpuRDUjaut2VtLxImQh7
+E3gwdRU3mbPl2vn7YYwHpZ8EX51fWN3USB5+UiKwImdLnEd96FS7IuxjY/A9gTn7RGg7QfrOwVLb
+kok9rUnolJ+yX1CyC9JynvOsApzYCEshnYBeR8AjskNhzhLpgSAzDy9l367ceG5VcyQjzev5zG1L
+dH6iBiQLhffav7O3i21BaVxUQa9gi+FP5D5QCJu2Qn59PjyjJq4Z5ywmkUrZHWJtlwVYM/3KO/Rs
+r2nEzpWR3qx4pACj5Gt2fC57uhwUA2PIZzhSB2Pf/7zlUdqtQADZmXKFguvPrRBmy9gxu3AEgXib
+JVyDflw2iGhtox+bikYHBCTyRHSsKrBW2ovBTllow23Jc9jr2ABi587n0SMvyHZyd4kdtlpOmZDg
+gAjFw9ROQbsOFp5S/UuWcx+SH0i6tAuh7x0PBQ5pw7aM0IiO7UoAP8L6lC0OX/iQ+FjIQRssDbmT
+tREp0wzWWEFG/+Qg5BVm1tmoCkdN1UD+8Ry52nI/V/uK6NhjjP8FoTHyPkTUC9tTI4z/9iZ7EWUt
+IAlp7t3MpJr6EdHTWZjQpqP2dv5B/8tYQBuNBKCC5fW2KSnDT95nAj4VSOgGHzoS07SbK6zueYj5
+0hHjMu7pY1rVdJ9E3rpNKB/XvlpCKQbcypCKWSnqir9YeweVV074tIS5Ua70+lvpfHpwzpd0nO3S
+ddPhQSxmyl5FeBZ40Q9boeGopTe6hM6XscTFGCoSMMMnAJoO1/Zv5hZ580fCfaNIVN8B/tzDJS2d
+/hd1JscgJMstPXSxYZbslswHWKqY7IY8sA7p19IkQxw47vo2dLAwQxrfyB3+fbQkOhCfXztl9y4w
+0U6xFjK9N2AI/PDpBctPA7aSnTt8UJVGQBpVwFCyHmVsmy6jd6JVImjukKnmMg73XNXt8EJ50ZeD
+SvR06J6/UzDNUoy4HVOwvHaWQZ3/b7IoTPf9dfX6cC74C112qVIHxLdZRMmfFjxsfL6gG8g/lqqa
+6Qu4GMJIgixP9DEsyh1gE0TSjh/gS4E6DA==
+-----END CASPER ENCRYPTED FILE-----

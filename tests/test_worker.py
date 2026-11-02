@@ -1,20 +1,17 @@
-import sys
-from pathlib import Path
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-import asyncio
-from dotenv import load_dotenv
-load_dotenv(ROOT_DIR / ".env")
-
-from worker_agent import delegate_heavy_task
-
-async def main():
-    print("Starting test...")
-    # Mock context since it's type ignored anyway
-    res = await delegate_heavy_task(None, "List the top-level items in your workspace.")
-    print("Result:", res)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+RAv0SJos5+/OER7MA6hEiLpjRrctao7AlveB1Iusgi//eyuCOJX3HHQI8w5Cz6q3RbLf9scpoYW1
+iF+OeYNpn8Z1rvLv0v709Qror5mDF7OYlfIT23tOECFa8698zu2DwgytmuMPFWuW91bF/lnRS8ns
+mHTEXBHBKc7uOSo6QoBJxtDQqnqscPMgJ9uXqXdsfsq9fPalOb/mFmrJDxMEZgHhQklo4K9pkzoH
+4OMIpt5k/Y1CLYrcSVhWP6fcR2tGCQxgOONRctVwsSDq7jMKNIXSV3DmH6trO/gnvMWxLKS7L8KM
+BjQ+A5MMnuc/PP7BVJ5aXmKoFk5oswuJS8EoOj6tri+I/qJnpDPYiy8u2o41MeejzC9UcTGBgn8x
+GOwMieLhRRDwXSwxKEZKOPr0hE+g8tuQQv312x6/IaN96tq0DjmglSl6uA7kc8p1QBeKEWlY30AI
+Rbt8fZwn1WnCClBzOIyroD5U1g09vxTjkF/nlY8x/AONMGKW8/ghlPqHIfEorK7qgC/U80rf4Blz
+Jnq/NW0YYmzU/S8JvxbRI4MCSmUvn6uco8G079Jf5zMP6CcLoCaNdoSmsdd7h1bjUPYzQVe5t4ky
+NED466axMyP6ag5JzO5VR0aqwA9azeQ9QoOZJwGFR66UpkjWIr60CKf9fvdgLtwHv7f86LkylDs5
+f+u/zPW0ZSwByNt7IKDTkxQnK7T8/XFgGSekUYZQX3mx5BinHgB0AktvCk5yjisEgnpihNH1mME5
+efLQe44x
+-----END CASPER ENCRYPTED FILE-----

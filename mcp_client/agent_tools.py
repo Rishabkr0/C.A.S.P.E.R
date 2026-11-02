@@ -1,216 +1,163 @@
-import asyncio
-import logging
-import json
-import inspect
-import typing
-from typing import Any, List, Dict, Callable, Optional, Awaitable, Sequence, Tuple, Type, Union, cast
-from uuid import uuid4
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-# Import from the MCP module
-from .util import MCPUtil, FunctionTool
-from .server import MCPServer, MCPServerSse
-from livekit.agents import ChatContext, AgentSession, JobContext, FunctionTool as Tool
-from mcp import CallToolRequest
-
-logger = logging.getLogger("mcp-agent-tools")
-
-class MCPToolsIntegration:
-    """
-    Helper class for integrating MCP tools with LiveKit agents.
-    Provides utilities for registering dynamic tools from MCP servers.
-    """
-
-    @staticmethod
-    async def prepare_dynamic_tools(mcp_servers: List[MCPServer],
-                                   convert_schemas_to_strict: bool = True,
-                                   auto_connect: bool = True) -> List[Callable]:
-        """
-        Fetches tools from multiple MCP servers and prepares them for use with LiveKit agents.
-
-        Args:
-            mcp_servers: List of MCPServer instances
-            convert_schemas_to_strict: Whether to convert JSON schemas to strict format
-            auto_connect: Whether to automatically connect to servers if they're not connected
-
-        Returns:
-            List of decorated tool functions ready to be added to a LiveKit agent
-        """
-        prepared_tools = []
-
-        # Ensure all servers are connected if auto_connect is True
-        if auto_connect:
-            for server in mcp_servers:
-                if not getattr(server, 'connected', False):
-                    try:
-                        logger.debug(f"Auto-connecting to MCP server: {server.name}")
-                        await server.connect()
-                    except Exception as e:
-                        logger.error(f"Failed to connect to MCP server {server.name}: {e}")
-
-        # Process each server
-        for server in mcp_servers:
-            logger.info(f"Fetching tools from MCP server: {server.name}")
-            try:
-                mcp_tools = await MCPUtil.get_function_tools(
-                    server, convert_schemas_to_strict=convert_schemas_to_strict
-                )
-                logger.info(f"Received {len(mcp_tools)} tools from {server.name}")
-            except Exception as e:
-                logger.error(f"Failed to fetch tools from {server.name}: {e}")
-                continue
-
-            # Process each tool from this server
-            for tool_instance in mcp_tools:
-                try:
-                    decorated_tool = MCPToolsIntegration._create_decorated_tool(tool_instance)
-                    prepared_tools.append(decorated_tool)
-                    logger.debug(f"Successfully prepared tool: {tool_instance.name}")
-                except Exception as e:
-                    logger.error(f"Failed to prepare tool '{tool_instance.name}': {e}")
-
-        return prepared_tools
-
-    @staticmethod
-    def _create_decorated_tool(tool: FunctionTool) -> Callable:
-        """
-        Creates a decorated function for a single MCP tool that can be used with LiveKit agents.
-
-        Args:
-            tool: The FunctionTool instance to convert
-
-        Returns:
-            A decorated async function that can be added to a LiveKit agent's tools
-        """
-        # Get function_tool decorator from LiveKit
-        # Import locally to avoid circular imports
-        from livekit.agents.llm import function_tool
-
-        # Create parameters list from JSON schema
-        params = []
-        annotations = {}
-        schema_props = tool.params_json_schema.get("properties", {})
-        schema_required = set(tool.params_json_schema.get("required", []))
-        type_map = {
-            "string": str, "integer": int, "number": float,
-            "boolean": bool, "array": list, "object": dict,
-        }
-
-        # Build parameters from the schema properties
-        for p_name, p_details in schema_props.items():
-            json_type = p_details.get("type", "string")
-            py_type = type_map.get(json_type, typing.Any)
-            annotations[p_name] = py_type
-
-            # Use inspect.Parameter.empty for required params, None otherwise
-            default = inspect.Parameter.empty if p_name in schema_required else p_details.get("default", None)
-            params.append(inspect.Parameter(
-                name=p_name,
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                annotation=py_type,
-                default=default
-            ))
-
-        # Define the actual function that will be called by the agent
-        async def tool_impl(**kwargs):
-            input_json = json.dumps(kwargs)
-            logger.info(f"Invoking tool '{tool.name}' with args: {kwargs}")
-            result_str = await tool.on_invoke_tool(None, input_json)
-            logger.info(f"Tool '{tool.name}' result: {result_str}")
-            return result_str
-
-        # Set function metadata
-        tool_impl.__signature__ = inspect.Signature(parameters=params)
-        tool_impl.__name__ = tool.name
-        tool_impl.__doc__ = tool.description
-        tool_impl.__annotations__ = {'return': str, **annotations}
-
-        # Apply the decorator and return
-        return function_tool()(tool_impl)
-
-    @staticmethod
-    async def register_with_agent(agent, mcp_servers: List[MCPServer],
-                                 convert_schemas_to_strict: bool = True,
-                                 auto_connect: bool = True) -> List[Callable]:
-        """
-        Helper method to prepare and register MCP tools with a LiveKit agent.
-
-        Args:
-            agent: The LiveKit agent instance
-            mcp_servers: List of MCPServer instances
-            convert_schemas_to_strict: Whether to convert schemas to strict format
-            auto_connect: Whether to auto-connect to servers
-
-        Returns:
-            List of tool functions that were registered
-        """
-        # Prepare the dynamic tools
-        tools = await MCPToolsIntegration.prepare_dynamic_tools(
-            mcp_servers,
-            convert_schemas_to_strict=convert_schemas_to_strict,
-            auto_connect=auto_connect
-        )
-
-        # Register with the agent
-        if hasattr(agent, '_tools') and isinstance(agent._tools, list):
-            agent._tools.extend(tools)
-            logger.info(f"Registered {len(tools)} MCP tools with agent")
-
-            # Log the names of registered tools
-            if tools:
-                tool_names = [getattr(t, '__name__', 'unknown') for t in tools]
-                logger.info(f"Registered tool names: {tool_names}")
-        else:
-            logger.warning("Agent does not have a '_tools' attribute, tools were not registered")
-
-        return tools
-
-    @staticmethod
-    async def create_agent_with_tools(agent_class, mcp_servers: List[MCPServer], agent_kwargs: Dict = None,
-                                    convert_schemas_to_strict: bool = True) -> Any:
-        """
-        Factory method to create and initialize an agent with MCP tools already loaded.
-
-        Args:
-            agent_class: Agent class to instantiate
-            mcp_servers: List of MCP servers to register with the agent
-            agent_kwargs: Additional keyword arguments to pass to the agent constructor
-            convert_schemas_to_strict: Whether to convert JSON schemas to strict format
-
-        Returns:
-            An initialized agent instance with MCP tools registered
-        """
-        # Connect to MCP servers
-        for server in mcp_servers:
-            if not getattr(server, 'connected', False):
-                try:
-                    logger.debug(f"Connecting to MCP server: {server.name}")
-                    await server.connect()
-                except Exception as e:
-                    logger.error(f"Failed to connect to MCP server {server.name}: {e}")
-
-        # Create agent instance
-        agent_kwargs = agent_kwargs or {}
-        agent = agent_class(**agent_kwargs)
-
-        # Prepare tools
-        tools = await MCPToolsIntegration.prepare_dynamic_tools(
-            mcp_servers,
-            convert_schemas_to_strict=convert_schemas_to_strict,
-            auto_connect=False  # Already connected above
-        )
-
-        # Register tools with agent
-        if tools and hasattr(agent, '_tools') and isinstance(agent._tools, list):
-            agent._tools.extend(tools)
-            logger.info(f"Registered {len(tools)} MCP tools with agent")
-
-            # Log the names of registered tools
-            tool_names = [getattr(t, '__name__', 'unknown') for t in tools]
-            logger.info(f"Registered tool names: {tool_names}")
-        else:
-            if not tools:
-                logger.warning("No tools were found to register with the agent")
-            else:
-                logger.warning("Agent does not have a '_tools' attribute, tools were not registered")
-
-        return agent
+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
+-----END CASPER ENCRYPTED FILE-----

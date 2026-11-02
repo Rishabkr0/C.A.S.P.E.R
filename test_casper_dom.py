@@ -1,116 +1,98 @@
-"""
-Test script for Casper DOM Agent & Ghost Cursor feature
-Demonstrates:
-1. Navigation via CDP
-2. Set-of-Marks visual badges on interactive elements
-3. Ghost Cursor gliding smoothly across the screen
-4. Click ripple animation and typing into search inputs
-5. Submitting search and clicking an element by numeric ID
-"""
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-import asyncio
-import logging
-import sys
-
-# Ensure UTF-8 output on Windows console
-if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    except Exception:
-        pass
-
-from mcp_client.chrome_server import create_chrome_server
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-async def run_test():
-    print("==================================================")
-    print("1. Connecting to Chrome Server via CDP...")
-    print("==================================================")
-    server = await create_chrome_server(auto_connect=True)
-
-    print("\n==================================================")
-    print("2. Navigating to Google...")
-    print("==================================================")
-    nav_res = await server.call_tool("navigate", {"url": "https://www.google.com"})
-    print("Navigation:", nav_res.get("content", [""])[0])
-    await asyncio.sleep(2.0)
-
-    print("\n==================================================")
-    print("3. Scanning DOM for Interactive Elements (Set-of-Marks)...")
-    print("   (Watch Chrome: Glowing cyan numbered badges will appear!)")
-    print("==================================================")
-    scan_res = await server.call_tool("scan_page", {"show_badges": True, "max_elements": 30})
-    print("\nScanned Elements:")
-    print(scan_res.get("content", ["No content"])[0])
-
-    print("\n==================================================")
-    print("4. Testing Ghost Cursor Movement & Visual Animation...")
-    print("   (Watch Chrome: Casper's glowing cursor glides to center)")
-    print("==================================================")
-    await server.call_tool("move_cursor", {"x": 500, "y": 350, "label": "Casper Scanning..."})
-    await asyncio.sleep(1.5)
-
-    # Locate the search input
-    elements = scan_res.get("elements", [])
-    search_input = None
-    for el in elements:
-        role = el.get("role", "")
-        label = el.get("label", "").lower()
-        if "combobox" in role or "input" in role or "search" in label or "textarea" in role:
-            search_input = el
-            break
-
-    if search_input:
-        el_id = search_input["id"]
-        print(f"\n==================================================")
-        print(f"5. Typing into element [{el_id}] '{search_input.get('label')}' with Ghost Cursor...")
-        print("   (Watch Chrome: Cursor moves to search bar, focuses, and types query)")
-        print(f"==================================================")
-        type_res = await server.call_tool("type_id", {
-            "id": el_id,
-            "text": "Antigravity AI Agent",
-            "press_enter": True
-        })
-        print("Type result:", type_res.get("content", [""])[0])
-        print("Waiting 3 seconds for search results to load...")
-        await asyncio.sleep(3.0)
-
-        # Scan the new search results page
-        print("\n==================================================")
-        print("6. Scanning Search Results Page...")
-        print("==================================================")
-        results_scan = await server.call_tool("scan_page", {"show_badges": True, "max_elements": 20})
-        print(results_scan.get("content", ["No content"])[0])
-
-        # Find first result link to click
-        result_elements = results_scan.get("elements", [])
-        link_to_click = None
-        for el in result_elements:
-            # Pick a link that is part of search results
-            if el.get("role") in ("a", "link") and el.get("y", 0) > 150 and len(el.get("label", "")) > 10:
-                link_to_click = el
-                break
-
-        if link_to_click:
-            click_id = link_to_click["id"]
-            print(f"\n==================================================")
-            print(f"7. Clicking Search Result [{click_id}] '{link_to_click.get('label')}'...")
-            print("   (Watch Chrome: Ghost cursor flies to link, triggers ripple wave & navigates)")
-            print(f"==================================================")
-            click_res = await server.call_tool("click_id", {"id": click_id})
-            print("Click result:", click_res.get("content", [""])[0])
-            await asyncio.sleep(3.0)
-
-    print("\n==================================================")
-    print("8. Cleaning up badges & overlays...")
-    print("==================================================")
-    await server.call_tool("clear_overlays", {})
-
-    print("\n==================================================")
-    print("✓ Full Casper DOM & Ghost Cursor test completed successfully!")
-    print("Chrome will stay open so you can see the result.")
-    print("==================================================")
-
-if __name__ == "__main__":
-    asyncio.run(run_test())
+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
+-----END CASPER ENCRYPTED FILE-----

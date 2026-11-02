@@ -1,868 +1,721 @@
-"""
-Chrome MCP Server Integration for casper — Real CDP Implementation
-Provides browser automation via Chrome DevTools Protocol (requests + websockets).
-No external npx dependency required. Launches Chrome with --remote-debugging-port
-and drives it directly.
-"""
-
-import asyncio
-import logging
-import subprocess
-import os
-import json
-import time
-import psutil
-import base64
-from typing import Optional, Dict, Any, List
-
-# Get USER_DATA_PATH for writeable config directories
-USER_DATA_PATH = os.getenv("USER_DATA_PATH", os.getcwd())
-
-logger = logging.getLogger("chrome-mcp")
-
-# Optional: ensure requests and websockets are available
-try:
-    import requests
-except ImportError:
-    requests = None  # type: ignore
-
-try:
-    import websockets
-except ImportError:
-    websockets = None  # type: ignore
-
-
-class ChromeMCPServer:
-    """Chrome MCP Server for browser automation — direct CDP."""
-
-    def __init__(
-        self,
-        chrome_path: Optional[str] = None,
-        user_data_dir: Optional[str] = None,
-        remote_debugging_port: int = 9222,
-        cache_tools_list: bool = True,
-        name: Optional[str] = "Chrome MCP",
-    ):
-        self.remote_debugging_port = remote_debugging_port
-        self.name = name
-        self.cache_tools_list = cache_tools_list
-        self._tools_cache: Optional[List[Any]] = None
-
-        # Resolve paths without triggering recursion
-        if chrome_path:
-            self.chrome_path = chrome_path
-        else:
-            self.chrome_path = self._find_chrome_path()
-
-        if user_data_dir:
-            self.user_data_dir = user_data_dir
-        else:
-            # Try to use real Chrome profile first, fallback to temp profile
-            self.user_data_dir = self._get_best_profile_path()
-
-        # Compat params dict for legacy code that inspects .params
-        self.params = {
-            "command": "chrome-cdp-direct",
-            "args": [],
-            "env": {
-                "CHROME_PATH": self.chrome_path,
-                "CHROME_USER_DATA_DIR": self.user_data_dir,
-                "CHROME_REMOTE_DEBUGGING_PORT": str(remote_debugging_port),
-            },
-        }
-
-        self.chrome_process: Optional[subprocess.Popen] = None
-        self._connected = False
-        # track if we launched the process (so we know whether to kill on cleanup)
-        self._launched_by_us = False
-
-    # ------------------------------------------------------------------ #
-    # Compatibility shims for legacy MCPServerStdio interface
-    # ------------------------------------------------------------------ #
-    @property
-    def connected(self) -> bool:
-        return self._connected
-
-    @connected.setter
-    def connected(self, value: bool):
-        self._connected = bool(value)
-
-    # ------------------------------------------------------------------ #
-    def _get_best_profile_path(self) -> str:
-        """
-        Get the Chrome profile path:
-        Using a dedicated Casper profile to avoid locking issues with the user's main Chrome instance.
-        """
-        casper_profile = os.path.join(USER_DATA_PATH, "casper_chrome_profile")
-        logger.info(f"Using dedicated Casper Chrome profile at: {casper_profile}")
-        return casper_profile
-
-    def _find_chrome_path(self) -> str:
-        """Auto-detect Chrome installation path"""
-        possible_paths = [
-            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
-            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
-            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
-            os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
-            os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                logger.info(f"Found Chrome/Edge at: {path}")
-                return path
-        raise FileNotFoundError(
-            "Chrome not found. Please install Google Chrome or specify chrome_path manually."
-        )
-
-    def _is_debug_port_open(self) -> bool:
-        """Check if debug port is responding via HTTP"""
-        if requests is None:
-            return self._is_chrome_running_with_debug()
-        try:
-            resp = requests.get(
-                f"http://127.0.0.1:{self.remote_debugging_port}/json/version",
-                timeout=1,
-            )
-            return resp.status_code == 200
-        except Exception:
-            return False
-
-    def _is_chrome_running_with_debug(self) -> bool:
-        """Check if Chrome is already running with remote debugging (psutil)"""
-        try:
-            for proc in psutil.process_iter(["name", "cmdline"]):
-                if proc.info["name"] and "chrome" in proc.info["name"].lower():
-                    cmdline = proc.info.get("cmdline", [])
-                    if cmdline and f"--remote-debugging-port={self.remote_debugging_port}" in " ".join(cmdline):
-                        logger.info("Chrome already running with remote debugging (psutil)")
-                        return True
-        except Exception as e:
-            logger.warning(f"Error checking Chrome process: {e}")
-        return False
-
-    async def _wait_for_debug_port(self, timeout: float = 15.0) -> bool:
-        """Poll until http://127.0.0.1:port/json/version responds."""
-        if requests is None:
-            await asyncio.sleep(2)
-            return True
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if self._is_debug_port_open():
-                return True
-            await asyncio.sleep(0.5)
-        return False
-
-    async def _launch_chrome(self):
-        """Launch Chrome with remote debugging enabled"""
-        if self._is_debug_port_open():
-            logger.info("Chrome debug port already open — reusing existing instance")
-            return
-
-        os.makedirs(self.user_data_dir, exist_ok=True)
-
-        chrome_args = [
-            self.chrome_path,
-            f"--remote-debugging-port={self.remote_debugging_port}",
-            f"--user-data-dir={self.user_data_dir}",
-            "--profile-directory=Default",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-background-timer-throttling",
-            "--disable-features=Translate",
-            "--start-maximized",
-        ]
-
-        try:
-            logger.info(f"Launching Chrome: {' '.join(chrome_args)}")
-            self.chrome_process = subprocess.Popen(
-                chrome_args,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self._launched_by_us = True
-            ok = await self._wait_for_debug_port(timeout=15)
-            if not ok:
-                raise RuntimeError(f"Chrome did not open debug port {self.remote_debugging_port} in time")
-            logger.info("Chrome launched and debug port ready")
-
-            # Log which profile is being used
-            if "User Data" in self.user_data_dir:
-                logger.info("✓ Using your real Chrome profile with all bookmarks, logins, and extensions")
-            else:
-                logger.info("✓ Using dedicated Casper Chrome profile. Log in to your accounts here and they will be remembered.")
-
-        except Exception as e:
-            logger.error(f"Failed to launch Chrome: {e}")
-            
-            # Kill the hanging process if it exists before falling back
-            if self.chrome_process:
-                logger.info("Terminating hanging Chrome process before fallback...")
-                self.chrome_process.terminate()
-                self.chrome_process = None
-
-            # If we tried to use real profile and it failed, retry with Casper profile
-            if "User Data" in self.user_data_dir:
-                logger.warning("Real Chrome profile is locked. Falling back to dedicated Casper profile...")
-                self.user_data_dir = os.path.join(USER_DATA_PATH, "casper_chrome_profile")
-                os.makedirs(self.user_data_dir, exist_ok=True)
-
-                # Retry with Casper profile
-                chrome_args[2] = f"--user-data-dir={self.user_data_dir}"
-                # Remove profile-directory for Casper profile to avoid creating unnecessary folders
-                chrome_args = [arg for arg in chrome_args if not arg.startswith("--profile-directory")]
-                
-                try:
-                    self.chrome_process = subprocess.Popen(
-                        chrome_args,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-                    )
-                    self._launched_by_us = True
-                    ok = await self._wait_for_debug_port(timeout=15)
-                    if not ok:
-                        raise RuntimeError(f"Chrome did not open debug port {self.remote_debugging_port} in time")
-                    logger.info("Chrome launched with dedicated Casper profile")
-                except Exception as retry_error:
-                    logger.error(f"Failed to launch Chrome even with Casper profile: {retry_error}")
-                    raise
-            else:
-                raise
-
-    # ---------------- CDP helpers ---------------- #
-    def _http_get_targets(self) -> List[Dict[str, Any]]:
-        if requests is None:
-            raise RuntimeError("requests library required for CDP HTTP")
-        resp = requests.get(f"http://127.0.0.1:{self.remote_debugging_port}/json", timeout=5)
-        resp.raise_for_status()
-        return resp.json()
-
-    def _get_page_targets(self) -> List[Dict[str, Any]]:
-        targets = self._http_get_targets()
-        return [t for t in targets if t.get("type") == "page"]
-
-    def _ensure_ws_url(self) -> str:
-        """Return ws URL for the active page; create one if none exists."""
-        pages = self._get_page_targets()
-        if pages:
-            # Prefer first non-chrome URL, or first page
-            for p in pages:
-                if p.get("url", "").startswith("http"):
-                    return p["webSocketDebuggerUrl"]
-            return pages[0]["webSocketDebuggerUrl"]
-        # No page — create one
-        if requests is None:
-            raise RuntimeError("No page target and requests unavailable")
-        resp = requests.get(
-            f"http://127.0.0.1:{self.remote_debugging_port}/json/new?about:blank",
-            timeout=5,
-        )
-        data = resp.json()
-        ws = data.get("webSocketDebuggerUrl")
-        if not ws:
-            raise RuntimeError(f"Failed to create new tab: {data}")
-        return ws
-
-    async def _cdp(self, ws_url: str, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 12.0) -> Any:
-        """Send a CDP command over websocket and wait for result."""
-        if websockets is None:
-            raise RuntimeError("websockets library required (pip install websockets)")
-        params = params or {}
-        msg_id = int(time.time() * 1000) % 1000000
-        payload = json.dumps({"id": msg_id, "method": method, "params": params})
-        async with websockets.connect(ws_url, max_size=None) as ws:
-            await ws.send(payload)
-            # wait for matching id
-            deadline = time.time() + timeout
-            while time.time() < deadline:
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
-                except asyncio.TimeoutError:
-                    raise TimeoutError(f"CDP {method} timed out")
-                data = json.loads(raw)
-                if data.get("id") == msg_id:
-                    if "error" in data:
-                        raise RuntimeError(f"CDP error {method}: {data['error']}")
-                    return data.get("result")
-                # ignore events
-            raise TimeoutError(f"CDP {method} no response for id {msg_id}")
-
-    async def _evaluate(self, expression: str, awaitPromise: bool = False, timeout: float = 12.0) -> Any:
-        ws_url = await asyncio.to_thread(self._ensure_ws_url)
-        result = await self._cdp(ws_url, "Runtime.evaluate", {
-            "expression": expression,
-            "returnByValue": True,
-            "awaitPromise": awaitPromise,
-            "userGesture": True,
-        }, timeout=timeout)
-        # result = { result: { type, value, ... } }
-        inner = result.get("result", {}) if isinstance(result, dict) else {}
-        if inner.get("subtype") == "error":
-            raise RuntimeError(inner.get("description", "JS evaluation error"))
-        return inner.get("value")
-
-    async def _navigate_via_evaluate(self, url: str) -> str:
-        # Use Runtime.evaluate to navigate — reliable without Page domain enable
-        js = f"window.location.href = {json.dumps(url)}; 'navigated to ' + window.location.href"
-        try:
-            await self._evaluate(js)
-        except Exception as e:
-            logger.warning(f"navigate evaluate warning: {e}")
-        # wait for navigation
-        await asyncio.sleep(2.5)
-        # verify url
-        try:
-            cur = await self._evaluate("window.location.href")
-            return str(cur)
-        except Exception:
-            return url
-
-    async def _ensure_dom_agent(self) -> bool:
-        """Inject the Casper DOM Agent and Ghost Cursor engine if not present."""
-        try:
-            is_injected = await self._evaluate("Boolean(window.__casperAgent)")
-            if not is_injected:
-                agent_path = os.path.join(os.path.dirname(__file__), "casper_dom_agent.js")
-                if os.path.exists(agent_path):
-                    with open(agent_path, "r", encoding="utf-8") as f:
-                        js_code = f.read()
-                    await self._evaluate(js_code)
-                    logger.info("Injected Casper DOM Agent & Ghost Cursor into current page")
-                else:
-                    logger.warning(f"casper_dom_agent.js not found at {agent_path}")
-                    return False
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to ensure DOM agent: {e}")
-            return False
-
-    # ---------------- Public API ---------------- #
-    async def connect(self):
-        """Connect to Chrome (launch if needed)"""
-        try:
-            await self._launch_chrome()
-            # quick sanity check — can we get ws url?
-            ws = await asyncio.to_thread(self._ensure_ws_url)
-            logger.info(f"Chrome CDP ws ready: {ws[:60]}...")
-            self._connected = True
-            logger.info(f"Successfully connected to {self.name}")
-        except Exception as e:
-            logger.error(f"Failed to connect Chrome CDP: {e}")
-            await self.cleanup()
-            raise
-
-    async def list_tools(self) -> List[Any]:
-        """List available Chrome automation tools (for MCP clients)"""
-        if not self._connected:
-            raise RuntimeError("Server not connected. Call connect() first.")
-        # Return the high-level tool definitions for documentation / MCP listing
-        # These mirror chrome_tools.py CHROME_TOOLS names
-        from mcp.types import Tool as MCPTool  # type: ignore
-        def _t(name: str, desc: str) -> MCPTool:
-            return MCPTool(name=name, description=desc, inputSchema={"type": "object", "properties": {}})  # minimal schema
-        names_descs = [
-            ("navigate", "Navigate to a URL"),
-            ("open_new_tab", "Open new tab"),
-            ("close_tab", "Close current tab"),
-            ("get_url", "Get current URL"),
-            ("click", "Click element by CSS selector"),
-            ("type", "Type into input field"),
-            ("execute_script", "Execute JavaScript"),
-            ("get_content", "Get page text content"),
-            ("screenshot", "Capture screenshot"),
-            ("list_tabs", "List all open tabs"),
-            ("switch_tab", "Switch to a specific tab by ID"),
-            ("close_other_tabs", "Close all tabs except the current one"),
-            ("get_cookies", "Get browser cookies"),
-            ("clear_cookies", "Clear browser cookies"),
-            ("set_blocked_urls", "Block network requests to specific URLs"),
-            ("scan_page", "Scan visible interactive elements with Casper Set-of-Marks badges"),
-            ("click_id", "Click interactive element using numeric ID with Casper Ghost Cursor"),
-            ("type_id", "Type text into element using numeric ID with Casper Ghost Cursor"),
-            ("move_cursor", "Move Casper Ghost Cursor to (x, y) coordinates"),
-            ("clear_overlays", "Clear Casper badges and cursor overlay"),
-        ]
-        tools = [_t(n, d) for n, d in names_descs]
-        if self.cache_tools_list:
-            self._tools_cache = tools
-        return tools
-
-    async def call_tool(
-        self,
-        tool_name: str,
-        arguments: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Call a Chrome automation tool — real CDP implementation."""
-        if not self._connected:
-            # Try lazy connect once
-            if self._is_debug_port_open():
-                self._connected = True
-            else:
-                raise RuntimeError("Server not connected. Call connect() first.")
-        arguments = arguments or {}
-        try:
-            logger.info(f"CDP tool: {tool_name} {arguments}")
-            result = await self._dispatch(tool_name, arguments)
-            # Normalize to MCP-like content dict for chrome_tools.py callers
-            if isinstance(result, dict) and "content" in result:
-                return result
-            return {"content": [str(result) if result is not None else "OK"]}
-        except Exception as e:
-            logger.error(f"Error calling Chrome tool {tool_name}: {e}")
-            raise
-
-    async def _dispatch(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        name = tool_name.strip().lower()
-
-        # ---- navigation ----
-        if name in ("navigate",):
-            url = args.get("url") or args.get("URL") or ""
-            if not url:
-                raise ValueError("navigate requires 'url'")
-            if not url.startswith("http"):
-                url = "https://" + url
-            cur = await self._navigate_via_evaluate(url)
-            return f"Navigated to {cur}"
-
-        if name in ("open_new_tab", "new_tab", "create_tab"):
-            url = args.get("url", "about:blank")
-            if url and not url.startswith("http") and url != "about:blank":
-                url = "https://" + url
-            if requests is None:
-                raise RuntimeError("requests required for new tab")
-
-            # Create new tab - try with URL parameter first
-            params = {"url": url} if url != "about:blank" else {}
-            resp = await asyncio.to_thread(requests.get, f"http://127.0.0.1:{self.remote_debugging_port}/json/new", params=params, timeout=5)
-            try:
-                data = resp.json()
-                tab_id = data.get('id', 'unknown')
-            except Exception:
-                data = {}
-                tab_id = 'unknown'
-
-            # Wait for tab to be created
-            await asyncio.sleep(1.5)
-
-            # For non-blank URLs, explicitly navigate to ensure page loads
-            if url != "about:blank":
-                try:
-                    # Get the new tab's websocket URL
-                    pages = await asyncio.to_thread(self._get_page_targets)
-                    # Find the newly created tab (last one or match by id)
-                    new_tab = None
-                    for p in pages:
-                        if p.get('id') == tab_id or (p.get('url', '').startswith('chrome://') or p.get('url') == 'about:blank'):
-                            new_tab = p
-                            break
-
-                    if not new_tab and pages:
-                        new_tab = pages[-1]  # Fallback to last tab
-
-                    if new_tab:
-                        # Force navigation using Runtime.evaluate on the new tab
-                        ws_url = new_tab.get('webSocketDebuggerUrl')
-                        if ws_url:
-                            js = f"window.location.href = {json.dumps(url)}; 'navigating'"
-                            await self._cdp(ws_url, "Runtime.evaluate", {
-                                "expression": js,
-                                "returnByValue": True,
-                                "userGesture": True,
-                            }, timeout=8.0)
-                            # Wait for navigation to complete
-                            await asyncio.sleep(2.5)
-
-                            # Verify navigation succeeded
-                            try:
-                                current_url = await self._cdp(ws_url, "Runtime.evaluate", {
-                                    "expression": "window.location.href",
-                                    "returnByValue": True,
-                                }, timeout=5.0)
-                                actual_url = current_url.get("result", {}).get("value", "")
-                                logger.info(f"New tab verified at: {actual_url}")
-                            except Exception as e:
-                                logger.warning(f"Could not verify navigation: {e}")
-                except Exception as e:
-                    logger.warning(f"Explicit navigation failed, tab may be blank: {e}")
-
-            return f"Opened new tab at {url}"
-
-        if name in ("close_tab", "close", "close_current_tab"):
-            pages = await asyncio.to_thread(self._get_page_targets)
-            if not pages:
-                return "No tabs to close"
-            target_id = pages[0]["id"]
-            if requests is None:
-                raise RuntimeError("requests required for close")
-            await asyncio.to_thread(requests.get, f"http://127.0.0.1:{self.remote_debugging_port}/json/close/{target_id}", timeout=5)
-            return "Closed tab"
-
-        if name in ("get_url", "get_current_url"):
-            val = await self._evaluate("window.location.href")
-            return str(val)
-
-        if name in ("list_tabs", "get_tabs"):
-            pages = await asyncio.to_thread(self._get_page_targets)
-            return [{"id": p.get("id"), "url": p.get("url"), "title": p.get("title")} for p in pages]
-
-        if name in ("switch_tab", "activate_tab"):
-            tab_id = args.get("tab_id")
-            if not tab_id:
-                raise ValueError("switch_tab requires 'tab_id'")
-            if requests is None:
-                raise RuntimeError("requests required for switch_tab")
-            await asyncio.to_thread(requests.get, f"http://127.0.0.1:{self.remote_debugging_port}/json/activate/{tab_id}", timeout=5)
-            return f"Switched to tab {tab_id}"
-
-        if name in ("close_other_tabs",):
-            pages = await asyncio.to_thread(self._get_page_targets)
-            if not pages:
-                return "No tabs to close"
-            count = 0
-            for p in pages[1:]:
-                tab_id = p.get("id")
-                try:
-                    await asyncio.to_thread(requests.get, f"http://127.0.0.1:{self.remote_debugging_port}/json/close/{tab_id}", timeout=5)
-                    count += 1
-                except Exception:
-                    pass
-            return f"Closed {count} other tabs"
-
-        if name in ("get_cookies", "clear_cookies"):
-            ws_url = await asyncio.to_thread(self._ensure_ws_url)
-            if name == "clear_cookies":
-                await self._cdp(ws_url, "Network.clearBrowserCache")
-                await self._cdp(ws_url, "Network.clearBrowserCookies")
-                return "Cookies and cache cleared"
-            else:
-                res = await self._cdp(ws_url, "Network.getCookies")
-                return res.get("cookies", []) if isinstance(res, dict) else []
-
-        if name in ("set_blocked_urls",):
-            urls = args.get("urls", [])
-            ws_url = await asyncio.to_thread(self._ensure_ws_url)
-            await self._cdp(ws_url, "Network.enable")
-            await self._cdp(ws_url, "Network.setBlockedURLs", {"urls": urls})
-            return f"Blocked URLs: {urls}"
-
-        if name in ("get_content", "get_page_content"):
-            # Large content — slice to avoid huge payload
-            js = "(document.documentElement.innerText || document.body.innerText || '').slice(0,15000)"
-            val = await self._evaluate(js)
-            return str(val or "No content")
-
-        if name in ("execute_script", "evaluate", "execute_javascript", "run_js"):
-            script = args.get("script") or args.get("expression") or args.get("js") or ""
-            if not script:
-                raise ValueError("execute_script requires 'script'")
-            # If caller wrapped in (async function(){...})() we awaitPromise
-            is_async = "await" in script or script.strip().startswith("(async")
-            val = await self._evaluate(script, awaitPromise=is_async)
-            return val if val is not None else "Script executed"
-
-        if name in ("click", "click_element"):
-            selector = args.get("selector") or args.get("css") or ""
-            if not selector and args.get("id") is None and args.get("element_id") is None:
-                raise ValueError("click requires 'selector' or 'id'")
-            # Route numeric selectors or id args to click_id
-            if args.get("id") is not None or args.get("element_id") is not None:
-                return await self._dispatch("click_id", args)
-            if isinstance(selector, int) or (isinstance(selector, str) and selector.strip().isdigit()):
-                return await self._dispatch("click_id", {"id": int(selector)})
-
-            await self._ensure_dom_agent()
-            js = f"""(() => {{
-                const el = document.querySelector({json.dumps(selector)});
-                if (!el) return 'not found: {selector}';
-                el.scrollIntoView({{block:'center', behavior:'smooth'}});
-                if (window.__casperAgent) {{
-                    const rect = el.getBoundingClientRect();
-                    const x = Math.round(rect.left + rect.width / 2);
-                    const y = Math.round(rect.top + rect.height / 2);
-                    window.__casperAgent.moveCursorTo(x, y, 'Clicking...');
-                    window.__casperAgent.playClickEffect(x, y);
-                }}
-                el.focus();
-                el.click();
-                // also dispatch mouse events for frameworks
-                el.dispatchEvent(new MouseEvent('mousedown', {{bubbles:true}}));
-                el.dispatchEvent(new MouseEvent('mouseup', {{bubbles:true}}));
-                return 'clicked: {selector}';
-            }})()"""
-            val = await self._evaluate(js, awaitPromise=True)
-            return str(val)
-
-        # ============================================
-        # CASPER DOM AGENT & GHOST CURSOR
-        # ============================================
-        if name in ("scan_dom", "scan_page", "get_interactive_elements"):
-            show_badges = bool(args.get("show_badges", False))
-            max_elements = int(args.get("max_elements", 75))
-            await self._ensure_dom_agent()
-            js = f"""(async () => {{
-                if (!window.__casperAgent) return [];
-                return window.__casperAgent.scanInteractiveElements({{
-                    showBadges: {json.dumps(show_badges)},
-                    maxElements: {max_elements}
-                }});
-            }})()"""
-            elements = await self._evaluate(js, awaitPromise=True)
-            if not elements or not isinstance(elements, list):
-                return "No interactive elements detected on the current page."
-
-            lines = [f"Found {len(elements)} interactive elements on page:"]
-            for el in elements:
-                lines.append(f"[{el['id']}] {el.get('role', 'element')}: \"{el.get('label', '')}\" (x={el.get('x')}, y={el.get('y')})")
-
-            summary = "\n".join(lines)
-            return {"content": [summary], "elements": elements}
-
-        if name in ("click_id", "click_element_by_id", "dom_click"):
-            el_id = args.get("id") or args.get("element_id")
-            if el_id is None:
-                raise ValueError("click_id requires 'id'")
-            await self._ensure_dom_agent()
-            js = f"""(async () => {{
-                if (!window.__casperAgent) return {{success: false, error: 'Casper DOM Agent not found'}};
-                return await window.__casperAgent.clickElementById({int(el_id)});
-            }})()"""
-            res = await self._evaluate(js, awaitPromise=True)
-            if isinstance(res, dict) and res.get("success"):
-                x = res.get("x")
-                y = res.get("y")
-                # Send CDP native mouse events for full browser fidelity
-                try:
-                    ws_url = await asyncio.to_thread(self._ensure_ws_url)
-                    await self._cdp(ws_url, "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-                    await self._cdp(ws_url, "Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-                    await self._cdp(ws_url, "Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
-                except Exception as cdp_err:
-                    logger.debug(f"CDP native mouse event dispatch note: {cdp_err}")
-                return f"Successfully clicked element [{el_id}] '{res.get('label', '')}' at ({x}, {y})"
-            else:
-                err = res.get("error") if isinstance(res, dict) else str(res)
-                return f"Failed to click element [{el_id}]: {err}"
-
-        if name in ("type_id", "type_element_by_id", "dom_type"):
-            el_id = args.get("id") or args.get("element_id")
-            text = args.get("text") or args.get("value") or ""
-            press_enter = bool(args.get("press_enter", False))
-            if el_id is None:
-                raise ValueError("type_id requires 'id' and 'text'")
-            await self._ensure_dom_agent()
-            js = f"""(async () => {{
-                if (!window.__casperAgent) return {{success: false, error: 'Casper DOM Agent not found'}};
-                return await window.__casperAgent.typeElementById({int(el_id)}, {json.dumps(text)});
-            }})()"""
-            res = await self._evaluate(js, awaitPromise=True)
-            if isinstance(res, dict) and res.get("success"):
-                if press_enter:
-                    try:
-                        ws_url = await asyncio.to_thread(self._ensure_ws_url)
-                        await self._cdp(ws_url, "Input.dispatchKeyEvent", {
-                            "type": "keyDown",
-                            "windowsVirtualKeyCode": 13,
-                            "key": "Enter",
-                            "code": "Enter",
-                            "text": "\r"
-                        })
-                        await self._cdp(ws_url, "Input.dispatchKeyEvent", {
-                            "type": "keyUp",
-                            "windowsVirtualKeyCode": 13,
-                            "key": "Enter",
-                            "code": "Enter"
-                        })
-                    except Exception as k_err:
-                        logger.debug(f"CDP Enter key event dispatch note: {k_err}")
-                return f"Successfully typed '{text}' into element [{el_id}]{' and pressed Enter' if press_enter else ''}"
-            else:
-                err = res.get("error") if isinstance(res, dict) else str(res)
-                return f"Failed to type into element [{el_id}]: {err}"
-
-        if name in ("move_cursor", "cursor_move"):
-            x = int(args.get("x", 0))
-            y = int(args.get("y", 0))
-            label = args.get("label", "Casper")
-            await self._ensure_dom_agent()
-            js = f"""(async () => {{
-                if (window.__casperAgent) {{
-                    await window.__casperAgent.moveCursorTo({x}, {y}, {json.dumps(label)});
-                }}
-            }})()"""
-            await self._evaluate(js, awaitPromise=True)
-            return f"Moved Casper Ghost Cursor to ({x}, {y})"
-
-        if name in ("clear_overlays", "clear_badges", "hide_badges"):
-            await self._ensure_dom_agent()
-            js = "window.__casperAgent ? window.__casperAgent.clearBadges() : null"
-            await self._evaluate(js)
-            return "Cleared Casper overlays and badges"
-
-        if name in ("type", "type_text", "input", "fill"):
-            selector = args.get("selector") or args.get("css") or ""
-            text = args.get("text") or args.get("value") or ""
-            if not selector:
-                raise ValueError("type requires 'selector'")
-            # Enhanced JS with code editor support - uses DOM-based approach
-            js = f"""(() => {{
-                const el = document.querySelector({json.dumps(selector)});
-                if (!el) return 'not found: {selector}';
-                el.focus();
-                el.scrollIntoView({{block:'center'}});
-
-                // --- ACE EDITOR DETECTION (DOM-based, no global dependency) ---
-                const aceContainer = el.closest('.ace_editor');
-                if (aceContainer) {{
-                    try {{
-                        // ACE editors store their instance in the DOM element
-                        if (aceContainer.env && aceContainer.env.editor) {{
-                            const editor = aceContainer.env.editor;
-                            editor.setValue({json.dumps(text)}, -1);
-                            editor.clearSelection();
-                            editor.focus();
-                            return 'ACE editor updated via DOM instance';
-                        }}
-
-                        // Try alternate ACE storage patterns
-                        if (aceContainer.aceEditor) {{
-                            aceContainer.aceEditor.setValue({json.dumps(text)}, -1);
-                            aceContainer.aceEditor.clearSelection();
-                            return 'ACE editor updated via aceEditor property';
-                        }}
-
-                        // Fallback: Manually set ACE content by manipulating lines
-                        const lines = {json.dumps(text)}.split('\\n');
-                        const lineElements = aceContainer.querySelectorAll('.ace_line_group');
-
-                        // Last resort: Clear and simulate typing
-                        el.value = '';
-                        el.focus();
-
-                        // Simulate typing each character with proper events
-                        const textToType = {json.dumps(text)};
-                        for (let i = 0; i < textToType.length; i++) {{
-                            const char = textToType[i];
-                            el.value += char;
-
-                            const inputEvent = new InputEvent('input', {{
-                                bubbles: true,
-                                cancelable: true,
-                                data: char,
-                                inputType: 'insertText'
-                            }});
-                            el.dispatchEvent(inputEvent);
-
-                            const keydownEvent = new KeyboardEvent('keydown', {{
-                                key: char,
-                                code: char === '\\n' ? 'Enter' : 'Key' + char.toUpperCase(),
-                                bubbles: true
-                            }});
-                            el.dispatchEvent(keydownEvent);
-
-                            const keyupEvent = new KeyboardEvent('keyup', {{
-                                key: char,
-                                bubbles: true
-                            }});
-                            el.dispatchEvent(keyupEvent);
-                        }}
-
-                        el.dispatchEvent(new Event('change', {{bubbles: true}}));
-                        return 'ACE editor content set via simulation';
-                    }} catch (e) {{
-                        return 'ACE editor error: ' + e.message;
-                    }}
-                }}
-
-                // --- CODEMIRROR EDITOR ---
-                const cmElement = el.closest('.CodeMirror');
-                if (cmElement && cmElement.CodeMirror) {{
-                    try {{
-                        cmElement.CodeMirror.setValue({json.dumps(text)});
-                        cmElement.CodeMirror.focus();
-                        return 'CodeMirror editor updated';
-                    }} catch (e) {{
-                        return 'CodeMirror error: ' + e.message;
-                    }}
-                }}
-
-                // --- MONACO EDITOR ---
-                try {{
-                    if (typeof monaco !== 'undefined') {{
-                        const models = monaco.editor.getModels();
-                        if (models.length > 0) {{
-                            models[0].setValue({json.dumps(text)});
-                            return 'Monaco editor updated';
-                        }}
-                    }}
-                }} catch (e) {{
-                    // Monaco not available, continue
-                }}
-
-                // --- STANDARD INPUT/TEXTAREA/CONTENTEDITABLE ---
-                if (el.isContentEditable) {{
-                    el.textContent = {json.dumps(text)};
-                }} else {{
-                    el.value = {json.dumps(text)};
-                    // For React controlled inputs
-                    const proto = Object.getPrototypeOf(el);
-                    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-                    if (desc && desc.set) {{
-                        desc.set.call(el, {json.dumps(text)});
-                    }}
-                }}
-                el.dispatchEvent(new Event('input', {{bubbles:true}}));
-                el.dispatchEvent(new Event('change', {{bubbles:true}}));
-                el.dispatchEvent(new KeyboardEvent('keydown', {{bubbles:true}}));
-                el.dispatchEvent(new KeyboardEvent('keyup', {{bubbles:true}}));
-                return 'typed into {selector}';
-            }})()"""
-            val = await self._evaluate(js)
-            return str(val)
-
-        if name in ("screenshot", "capture_screenshot", "take_screenshot"):
-            full = bool(args.get("full_page") or args.get("fullPage"))
-            ws_url = await asyncio.to_thread(self._ensure_ws_url)
-            # Try CDP screenshot
-            try:
-                res = await self._cdp(ws_url, "Page.captureScreenshot", {"format": "png", "captureBeyondViewport": full})
-                data = res.get("data", "") if isinstance(res, dict) else ""
-                # We don't save file — just confirm
-                return f"Screenshot captured ({len(data)} bytes base64, full_page={full})"
-            except Exception as e:
-                # Fallback: evaluate page dimensions
-                return f"Screenshot failed: {e}"
-
-        # ---- generic fallback: try evaluate if tool looks like JS ----
-        logger.warning(f"Unknown Chrome tool '{tool_name}', trying evaluate fallback")
-        if "script" in args:
-            return await self._evaluate(args["script"], awaitPromise=True)
-        return f"Unknown tool: {tool_name} args={args}"
-
-    async def cleanup(self):
-        """Cleanup Chrome CDP server — keep Chrome open so user can see results."""
-        logger.info("Cleaning up Chrome CDP server (keeping browser open for visibility)...")
-        # Intentionally do NOT kill Chrome on cleanup — user wants to see search results.
-        # Chrome will stay running with --remote-debugging-port. It can be closed manually.
-        # Only mark disconnected; process stays alive.
-        self._connected = False
-        # Note: do not call super().cleanup() — we are not an MCPServerStdio anymore
-
-
-async def create_chrome_server(
-    chrome_path: Optional[str] = None,
-    user_data_dir: Optional[str] = None,
-    remote_debugging_port: int = 9222,
-    auto_connect: bool = True
-) -> ChromeMCPServer:
-    """
-    Factory function to create and optionally connect to Chrome CDP server
-    """
-    server = ChromeMCPServer(
-        chrome_path=chrome_path,
-        user_data_dir=user_data_dir,
-        remote_debugging_port=remote_debugging_port
-    )
-    if auto_connect:
-        await server.connect()
-    return server
-    return server
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+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
+-----END CASPER ENCRYPTED FILE-----

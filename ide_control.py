@@ -1,732 +1,535 @@
-import os
-import sys
-import time
-import json
-import logging
-import asyncio
-import io
-import re
-from typing import Optional, Tuple, Dict, Any
-
-from PIL import Image
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-
-load_dotenv()
-logger = logging.getLogger("ide_control")
-
-IDE_PROCESS_NAMES = [
-    "antigravity ide.exe",
-    "code.exe",
-    "cursor.exe",
-    "windsurf.exe",
-    "pycharm64.exe",
-    "pycharm.exe",
-    "idea64.exe",
-    "idea.exe",
-    "sublime_text.exe",
-    "notepad++.exe",
-    "notepad.exe",
-]
-
-def find_file_on_disk(filename: str) -> Optional[str]:
-    """Searches workspace, Documents, Desktop, and Downloads for the exact source file."""
-    if not filename:
-        return None
-
-    if os.path.isabs(filename) and os.path.isfile(filename):
-        return filename
-
-    basename = os.path.basename(filename).strip().lower()
-    search_roots = [
-        os.path.dirname(os.path.abspath(__file__)),
-        os.path.join(os.path.expanduser("~"), "Documents"),
-        os.path.join(os.path.expanduser("~"), "Desktop"),
-        os.path.join(os.path.expanduser("~"), "Downloads"),
-    ]
-
-    for root in search_roots:
-        if not os.path.exists(root):
-            continue
-        for dirpath, _, filenames in os.walk(root):
-            if any(skip in dirpath.lower() for skip in [".git", "node_modules", ".venv", "__pycache__", "casper_chrome_profile", "appdata"]):
-                continue
-            for f in filenames:
-                if f.lower() == basename:
-                    candidate = os.path.join(dirpath, f)
-                    if os.path.isfile(candidate):
-                        return candidate
-
-    return None
-
-def get_ide_window_info() -> Dict[str, Any]:
-    """
-    Finds the active IDE window (VS Code, Antigravity IDE, Cursor, PyCharm, etc.),
-    extracts the HWND, window title, and active filename if present in the title.
-    """
-    info = {
-        "hwnd": None,
-        "title": "",
-        "ide_name": "VS Code",
-        "active_filename": "",
-        "rect": None,
-    }
-
-    try:
-        import win32gui
-        import win32process
-        import psutil
-        import ctypes
-
-        ide_windows = []
-
-        # Check foreground window first
-        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
-        if fg_hwnd:
-            try:
-                fg_title = win32gui.GetWindowText(fg_hwnd).strip()
-                fg_low = fg_title.lower()
-                if any(k in fg_low for k in ["visual studio code", "antigravity", "cursor", "windsurf", "pycharm", "sublime", "notepad++"]):
-                    ide_windows.append((fg_hwnd, fg_title, "foreground_ide", None))
-            except Exception:
-                pass
-
-        def enum_windows_callback(hwnd, _):
-            try:
-                if win32gui.IsWindowVisible(hwnd):
-                    title = win32gui.GetWindowText(hwnd).strip()
-                    if title:
-                        try:
-                            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                            proc = psutil.Process(pid)
-                            pname = proc.name().lower()
-                            for ide_proc in IDE_PROCESS_NAMES:
-                                if ide_proc in pname:
-                                    ide_windows.append((hwnd, title, pname, proc))
-                                    break
-                        except Exception:
-                            title_low = title.lower()
-                            if any(k in title_low for k in ["visual studio code", "antigravity", "cursor", "windsurf", "pycharm", "sublime", "notepad++"]):
-                                ide_windows.append((hwnd, title, "editor", None))
-            except Exception:
-                pass
-            return 1
-
-        try:
-            win32gui.EnumWindows(enum_windows_callback, None)
-        except Exception:
-            pass
-
-        if ide_windows:
-            chosen_hwnd, chosen_title, chosen_pname, _ = ide_windows[0]
-            for h, t, p, _ in ide_windows:
-                if any(ext in t.lower() for ext in [".py", ".js", ".ts", ".html", ".css", ".json", ".md", ".rs", ".go", ".cpp", ".c"]):
-                    chosen_hwnd, chosen_title, chosen_pname = h, t, p
-                    break
-
-            info["hwnd"] = chosen_hwnd
-            info["title"] = chosen_title
-            try:
-                info["rect"] = win32gui.GetWindowRect(chosen_hwnd)
-            except Exception:
-                pass
-
-            if "antigravity" in chosen_pname or "antigravity" in chosen_title.lower():
-                info["ide_name"] = "Antigravity IDE"
-            elif "cursor" in chosen_pname or "cursor" in chosen_title.lower():
-                info["ide_name"] = "Cursor"
-            elif "windsurf" in chosen_pname or "windsurf" in chosen_title.lower():
-                info["ide_name"] = "Windsurf"
-            elif "pycharm" in chosen_pname or "pycharm" in chosen_title.lower():
-                info["ide_name"] = "PyCharm"
-            else:
-                info["ide_name"] = "Visual Studio Code"
-
-            cleaned_title = chosen_title.lstrip("● \t")
-            parts = cleaned_title.split(" - ")
-            if parts:
-                candidate = parts[0].strip()
-                if "." in candidate and not candidate.startswith("Visual Studio"):
-                    info["active_filename"] = candidate
-
-    except Exception as e:
-        logger.warning(f"Error enumerating IDE windows: {e}")
-
-    return info
-
-def bring_window_to_front(hwnd: int) -> bool:
-    """Forces an IDE window to the foreground using Win32 API."""
-    if not hwnd:
-        return False
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-
-        user32.ShowWindow(hwnd, 9)
-        current_thread_id = user32.GetCurrentThreadId()
-        window_thread_id = user32.GetWindowThreadProcessId(hwnd, None)
-        user32.AttachThreadInput(current_thread_id, window_thread_id, True)
-        user32.SetForegroundWindow(hwnd)
-        user32.BringWindowToTop(hwnd)
-        user32.SetFocus(hwnd)
-        user32.AttachThreadInput(current_thread_id, window_thread_id, False)
-        time.sleep(0.15)
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to bring window to front: {e}")
-        return False
-
-def capture_screen_image(rect: Optional[Tuple[int, int, int, int]] = None) -> Tuple[Optional[bytes], int, int]:
-    """Captures the IDE window or screen as high-quality JPEG bytes."""
-    img = None
-    try:
-        from PIL import ImageGrab
-        if rect and (rect[2] - rect[0] > 100) and (rect[3] - rect[1] > 100):
-            img = ImageGrab.grab(bbox=rect)
-        else:
-            img = ImageGrab.grab()
-    except Exception:
-        pass
-
-    if img is None:
-        try:
-            import pyautogui
-            img = pyautogui.screenshot()
-        except Exception:
-            pass
-
-    if img is None:
-        return None, 0, 0
-
-    w, h = img.size
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
-    return buf.getvalue(), w, h
-
-def extract_filename_from_prompt(prompt: str) -> Optional[str]:
-    """Extracts mentioned filename like test.py from user instruction."""
-    if not prompt:
-        return None
-    # Avoid matching inside code blocks or deep inside code text
-    search_text = prompt.split("```")[0] if "```" in prompt else prompt
-    first_part = search_text[:250]
-    match = re.search(r'\b(?!(?:self|this|os|sys|time|math|json|re)\.)[a-zA-Z0-9_\-]+\.(?:py|js|ts|html|css|json|cpp|jsx|tsx|rs|go)\b', first_part, re.IGNORECASE)
-    if match:
-        return match.group(0)
-    return None
-
-def extract_code_from_text(text: str) -> Optional[str]:
-    """Extracts code if pasted directly into user prompt."""
-    if not text:
-        return None
-    if "```" in text:
-        parts = text.split("```")
-        if len(parts) >= 3:
-            code = parts[1].strip()
-            lines = code.split("\n")
-            if lines and lines[0].strip().lower() in ["python", "py", "javascript", "js", "html", "css", "ts", "json", "c", "cpp"]:
-                return "\n".join(lines[1:]).strip()
-            return code
-    if any(k in text for k in ["import ", "def ", "class ", "from "]) and "\n" in text:
-        lines = [line for line in text.split("\n") if line.strip()]
-        code_lines = [l for l in lines if any(l.strip().startswith(kw) for kw in ["import ", "from ", "class ", "def ", "if ", "for ", "while ", "return ", "self.", "#"])]
-        if len(code_lines) >= 3:
-            return text.strip()
-    return None
-
-def jump_and_replace_line_in_ide(
-    line_number: int,
-    fixed_code: str,
-    hwnd: Optional[int] = None,
-    file_path: Optional[str] = None
-) -> Tuple[bool, str]:
-    """
-    Directly navigates to a specific line number in the active IDE via Ctrl+G,
-    replaces the line with fixed_code, and saves the file.
-    Also synchronizes to disk if file_path is provided.
-    """
-    import pyautogui
-    import pyperclip
-
-    try:
-        if hwnd:
-            bring_window_to_front(hwnd)
-            time.sleep(0.12)
-            # Jump to line: Ctrl+G, type line_number, Enter
-            pyautogui.hotkey("ctrl", "g")
-            time.sleep(0.08)
-            pyautogui.write(str(line_number))
-            time.sleep(0.05)
-            pyautogui.press("enter")
-            time.sleep(0.08)
-
-            # Select the entire line: Home -> Shift+End
-            pyautogui.press("home")
-            time.sleep(0.02)
-            pyautogui.hotkey("shift", "end")
-            time.sleep(0.02)
-
-            # Paste fixed code
-            pyperclip.copy(fixed_code)
-            time.sleep(0.02)
-            pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.05)
-
-            # Save
-            pyautogui.hotkey("ctrl", "s")
-            time.sleep(0.08)
-
-        # Sync disk file if path exists
-        if file_path and os.path.isfile(file_path):
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-            if 1 <= line_number <= len(lines):
-                lines[line_number - 1] = fixed_code + ("\n" if not fixed_code.endswith("\n") else "")
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.writelines(lines)
-
-        return True, f"Navigated to line {line_number}, applied the fix, and saved the file."
-    except Exception as e:
-        logger.error(f"Error in jump_and_replace_line_in_ide: {e}")
-        return False, f"Failed to navigate and edit line {line_number}: {e}"
-
-async def diagnose_and_fix_code(
-    code_text: str,
-    screenshot_bytes: Optional[bytes] = None,
-    user_instruction: str = "",
-    filename: str = ""
-) -> Dict[str, Any]:
-    """
-    Performs a deep holistic architectural & syntax audit of the code using Gemini 3.5 Flash Lite.
-    Identifies all concurrency race conditions, deadlocks, graph bugs, thread safety issues,
-    and syntax errors, and returns the 100% complete fixed code + JARVIS voice summary.
-    """
-    api_key = os.getenv("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key) if api_key else genai.Client()
-
-    prompt = (
-        "You are an elite principal software engineer and debugging specialist (acting as Casper / JARVIS).\n"
-        f"Active File: '{filename or 'code'}'\n"
-        f"User Prompt / Context: '{user_instruction}'\n\n"
-        "SOURCE CODE CURRENTLY IN THE USER'S EDITOR:\n"
-        "```\n"
-        f"{code_text}\n"
-        "```\n\n"
-        "DEBUGGING DIRECTIVES:\n"
-        "1. Perform a thorough, holistic audit of the ENTIRE script. Do NOT stop at the first error or single-line syntax issues.\n"
-        "2. Check for all categories of bugs:\n"
-        "   - Concurrency & Threading: Race conditions, unhandled thread synchronization, premature crashes, deadlocks, missing events/locks, unprotected shared state.\n"
-        "   - Algorithmic & Graph logic: Infinite loops, cycle detection flaws, recursion issues, edge cases.\n"
-        "   - Error handling & Flow control: Premature exceptions, unhandled None/missing keys, invalid dictionary/list access.\n"
-        "   - Syntax & Typographical: Missing colons, unclosed brackets/parentheses, wrong variable names, indentation errors.\n"
-        "3. Produce the COMPLETE, 100% WORKING FIXED CODE for the entire file. Include all imports, classes, functions, and runnable code. Ensure the fixed code runs cleanly from start to finish without raising unexpected exceptions or deadlocking.\n"
-        "4. Provide a clear, natural, spoken JARVIS-style voice summary (1-3 sentences) explaining what was broken and that the complete fix has been applied to their editor.\n\n"
-        "Respond ONLY with valid JSON in this exact structure (no markdown fences around the JSON):\n"
-        "{\n"
-        '  "has_bug": true,\n'
-        '  "bugs_found": [\n'
-        '    "Detailed explanation of bug 1 and its location",\n'
-        '    "Detailed explanation of bug 2 and its location"\n'
-        '  ],\n'
-        '  "full_fixed_code": "complete working code here",\n'
-        '  "voice_summary": "Boss, I analyzed your code and found [summary of issues]. I have refactored and fixed all issues across the file and saved it in your editor."\n'
-        "}"
-    )
-
-    contents = []
-    if screenshot_bytes:
-        contents.append(types.Part.from_bytes(data=screenshot_bytes, mime_type="image/jpeg"))
-    contents.append(prompt)
-
-    # Try gemini-3-flash-preview, fallback to gemini-3.5-flash-lite if needed
-    for model_name in ["gemini-3-flash-preview", "gemini-3.5-flash-lite"]:
-        try:
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model=model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(temperature=0.1)
-            )
-            raw_text = response.text.strip()
-            
-            # Robust JSON extraction
-            if "```json" in raw_text:
-                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in raw_text:
-                raw_text = raw_text.split("```")[1].split("```")[0].strip()
-
-            start_idx = raw_text.find("{")
-            end_idx = raw_text.rfind("}")
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                raw_text = raw_text[start_idx:end_idx+1]
-
-            data = json.loads(raw_text)
-
-            # Python syntax verification safeguard
-            fixed_code = data.get("full_fixed_code", "")
-            is_py = (filename and filename.endswith(".py")) or "def " in code_text or "class " in code_text or "import " in code_text
-            if fixed_code and is_py:
-                try:
-                    compile(fixed_code, filename or "<fixed_code>", "exec")
-                except SyntaxError as syn_err:
-                    logger.warning(f"Generated code had syntax error ({syn_err}), requesting immediate syntax repair...")
-                    fix_prompt = (
-                        f"The code you generated had a Python SyntaxError on line {syn_err.lineno}: {syn_err.msg}.\n"
-                        f"Code:\n```python\n{fixed_code}\n```\n"
-                        "Please fix this syntax error and return the complete valid working code as valid JSON with 'has_bug': true, 'bugs_found', 'full_fixed_code', and 'voice_summary'."
-                    )
-                    fix_res = await asyncio.to_thread(
-                        client.models.generate_content,
-                        model=model_name,
-                        contents=[fix_prompt],
-                        config=types.GenerateContentConfig(temperature=0.1)
-                    )
-                    fix_raw = fix_res.text.strip()
-                    s_idx = fix_raw.find("{")
-                    e_idx = fix_raw.rfind("}")
-                    if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
-                        fix_data = json.loads(fix_raw[s_idx:e_idx+1])
-                        if fix_data.get("full_fixed_code"):
-                            data["full_fixed_code"] = fix_data["full_fixed_code"]
-
-            return data
-        except Exception as e:
-            logger.warning(f"Model {model_name} diagnosis failed: {e}")
-            continue
-
-    return {
-        "has_bug": False,
-        "explanation": "Could not complete diagnosis.",
-        "voice_summary": "I had difficulty analyzing the code, Boss. Please ensure the code is visible on screen."
-    }
-
-async def write_code_to_ide(
-    task_description: str = "",
-    filename: str = "",
-    provided_code: str = ""
-) -> str:
-    """
-    Writes, generates, or updates code directly in VS Code:
-    1. Determines or creates the target file in the project workspace.
-    2. Uses Gemini to write 100% complete, runnable, production-quality code if not provided.
-    3. Writes the file to disk and opens/reloads it directly in VS Code via `code -r <path>`.
-    4. Focuses the editor window.
-    5. Returns articulate JARVIS voice confirmation.
-    """
-    import subprocess
-    import pyautogui
-    import pyperclip
-
-    # 1. Determine target filename
-    if not filename:
-        filename = extract_filename_from_prompt(task_description) or ""
-
-    ide_info = get_ide_window_info()
-    hwnd = ide_info.get("hwnd")
-    active_file = ide_info.get("active_filename")
-
-    if not filename and active_file:
-        filename = active_file
-
-    if not filename:
-        # Deduce intelligent default from task description
-        task_low = task_description.lower()
-        if any(k in task_low for k in ["html", "website", "web page"]):
-            filename = "index.html"
-        elif any(k in task_low for k in ["javascript", "js", "node", "express"]):
-            filename = "app.js"
-        elif any(k in task_low for k in ["typescript", "ts"]):
-            filename = "index.ts"
-        elif any(k in task_low for k in ["css", "style"]):
-            filename = "styles.css"
-        else:
-            filename = "main.py"
-
-    # 2. Extract or generate code
-    code_to_write = provided_code
-    if not code_to_write:
-        code_to_write = extract_code_from_text(task_description) or ""
-
-    voice_summary = ""
-
-    if not code_to_write or len(code_to_write.strip()) < 15:
-        api_key = os.getenv("GEMINI_API_KEY")
-        client = genai.Client(api_key=api_key) if api_key else genai.Client()
-
-        prompt = (
-            "You are Casper (Clearly A Somewhat Pretty Excellent Robot), Rishab's personal desktop AI assistant and elite principal engineer.\n"
-            f"Active File: '{filename}'\n"
-            f"Instruction: {task_description}\n\n"
-            "REQUIREMENTS:\n"
-            "1. Write complete, production-grade, 100% runnable code implementing the requested feature/task.\n"
-            "2. Include all necessary imports, clean docstrings, robust error handling, and a runnable block where appropriate.\n"
-            "3. Do NOT use placeholders, TODOs, or truncate code.\n"
-            "4. Start with a 1-2 sentence spoken JARVIS summary for Boss.\n"
-            "5. Wrap the code in a single markdown code block: ```language ... ```\n"
-        )
-
-        model_candidates = [
-            os.getenv("GEMINI_CODE_MODEL", "gemini-3.5-flash-lite"),
-            "gemini-3.5-flash-lite",
-            "gemini-3-flash-preview",
-            "gemini-2.5-flash",
-        ]
-        unique_models = list(dict.fromkeys(model_candidates))
-
-        for model_name in unique_models:
-            try:
-                response = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model=model_name,
-                    contents=[prompt],
-                    config=types.GenerateContentConfig(temperature=0.2)
-                )
-                if response and response.text:
-                    res_text = response.text.strip()
-                    extracted = extract_code_from_text(res_text)
-                    code_to_write = extracted if extracted else res_text
-
-                    # Extract voice summary
-                    if "```" in res_text:
-                        summary_part = res_text.split("```")[0].strip()
-                        if summary_part:
-                            voice_summary = summary_part.replace("\n", " ")
-                    break
-            except Exception as e:
-                logger.warning(f"Model {model_name} code generation failed: {e}")
-                continue
-
-    if not code_to_write:
-        return f"I had difficulty generating the code for '{filename}', Boss. Please check your prompt and try again."
-
-    if not voice_summary:
-        voice_summary = f"Boss, I have written the complete code for '{filename}' and updated it in your editor."
-
-    # 3. Locate or create target file path in workspace
-    file_path = find_file_on_disk(filename)
-    if not file_path:
-        workspace_dir = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(workspace_dir, filename)
-
-    # 4. Write code to disk with UTF-8 encoding
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(code_to_write)
-        logger.info(f"Successfully wrote code to {file_path}")
-    except Exception as fe:
-        logger.error(f"Error writing to file {file_path}: {fe}")
-        return f"Failed to save code to '{filename}': {fe}"
-
-    # 5. Open / Reload in VS Code using the native CLI
-    try:
-        subprocess.Popen(["code", "-r", file_path], shell=True)
-        logger.info(f"Triggered VS Code CLI: code -r {file_path}")
-    except Exception as ce:
-        logger.warning(f"Could not open file via 'code' CLI: {ce}")
-
-    # 6. Also focus the window if hwnd is known, or paste if untitled
-    if hwnd:
-        try:
-            bring_window_to_front(hwnd)
-            time.sleep(0.1)
-            pyperclip.copy(code_to_write)
-        except Exception:
-            pass
-
-    return f"{voice_summary}\n\nSaved and loaded in VS Code: {os.path.basename(file_path)}"
-
-async def inspect_and_fix_code(task_description: str = "") -> str:
-    """
-    Direct code inspection, writing, and fix workflow:
-    1. If user asked to write, create, or implement code, routes to write_code_to_ide.
-    2. Otherwise finds active IDE on screen or mentioned file.
-    3. Reads the actual code directly from editor buffer, disk, or user prompt.
-    4. Performs holistic multi-bug diagnosis with Gemini.
-    5. Pastes the corrected code directly into the editor and synchronizes to disk.
-    6. Returns articulate voice confirmation.
-    """
-    import pyautogui
-    import pyperclip
-
-    # Route creation/writing tasks directly to write_code_to_ide
-    creation_keywords = ["write", "create", "implement", "build", "generate", "code for", "make a script", "add a script", "add function", "add class"]
-    task_low = task_description.lower()
-    is_creation = any(kw in task_low for kw in creation_keywords) and not any(kw in task_low for kw in ["fix", "bug", "error", "issue", "wrong", "broken", "why"])
-    if is_creation:
-        return await write_code_to_ide(task_description=task_description)
-
-    # 1. Determine target file & IDE window
-    mentioned_file = extract_filename_from_prompt(task_description)
-    ide_info = get_ide_window_info()
-    hwnd = ide_info.get("hwnd")
-    ide_name = ide_info.get("ide_name", "VS Code")
-    filename = mentioned_file or ide_info.get("active_filename", "active_file.py")
-    rect = ide_info.get("rect")
-
-    # Focus IDE window
-    if hwnd:
-        bring_window_to_front(hwnd)
-        time.sleep(0.15)
-
-    # 2. Get the actual code
-    code_text = ""
-    file_path = find_file_on_disk(filename)
-
-    # Try reading from disk first if found
-    if file_path and os.path.isfile(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                code_text = f.read()
-        except Exception:
-            pass
-
-    # If editor window is active, copy directly from the active editor buffer
-    if hwnd:
-        try:
-            bring_window_to_front(hwnd)
-            time.sleep(0.1)
-            # Select all, copy, and restore cursor
-            pyautogui.hotkey("ctrl", "a")
-            time.sleep(0.08)
-            pyautogui.hotkey("ctrl", "c")
-            time.sleep(0.08)
-            pyautogui.press("left")
-            editor_content = pyperclip.paste()
-            if editor_content and len(editor_content.strip()) > 5:
-                code_text = editor_content
-        except Exception as e:
-            logger.warning(f"Could not copy from editor buffer: {e}")
-
-    # Fallback: check if user pasted code directly in task_description
-    if not code_text or len(code_text.strip()) < 10:
-        extracted = extract_code_from_text(task_description)
-        if extracted:
-            code_text = extracted
-
-    if not code_text:
-        # If code was empty, user wants code written!
-        return await write_code_to_ide(task_description=task_description, filename=filename)
-
-    # Capture screen image if possible
-    screenshot_bytes, _, _ = capture_screen_image(rect)
-
-    # 3. LLM Diagnosis & Fix
-    diagnosis = await diagnose_and_fix_code(
-        code_text=code_text,
-        screenshot_bytes=screenshot_bytes,
-        user_instruction=task_description,
-        filename=filename
-    )
-
-    if not diagnosis.get("has_bug"):
-        # If user asked for an addition/modification
-        if any(kw in task_low for kw in ["add", "write", "update", "modify", "change", "insert", "implement"]):
-            return await write_code_to_ide(task_description=task_description, filename=filename)
-        return f"Boss, I reviewed your code in '{filename}'. Everything appears clean and syntactically sound. No errors detected."
-
-    full_fixed_code = diagnosis.get("full_fixed_code")
-    voice_summary = diagnosis.get("voice_summary", "I have identified the issues and applied the complete fix for you.")
-    bugs = diagnosis.get("bugs_found", [])
-
-    if not full_fixed_code:
-        return f"{voice_summary}\nBugs noted:\n" + "\n".join([f"- {b}" for b in bugs])
-
-    # 4. Apply Fix directly into editor
-    applied_to_editor = False
-    if hwnd:
-        try:
-            bring_window_to_front(hwnd)
-            time.sleep(0.12)
-            pyperclip.copy(full_fixed_code)
-            time.sleep(0.05)
-            # Select all in editor and paste clean fix
-            pyautogui.hotkey("ctrl", "a")
-            time.sleep(0.05)
-            pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.1)
-            # Save file
-            pyautogui.hotkey("ctrl", "s")
-            time.sleep(0.1)
-            applied_to_editor = True
-        except Exception as e:
-            logger.warning(f"Failed to paste into editor: {e}")
-
-    # Also synchronize to disk file directly if path is known
-    if file_path and os.path.isfile(file_path):
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(full_fixed_code)
-        except Exception as fe:
-            logger.warning(f"Could not write directly to disk file: {fe}")
-    elif not applied_to_editor:
-        # If no editor was open and file not on disk, save in workspace
-        try:
-            from worker_agent import WORKER_WORKSPACE
-            save_name = filename if (filename and filename != "active_file.py" and not filename.startswith("self.") and "." in filename) else "fixed_code.py"
-            out_path = os.path.join(WORKER_WORKSPACE, save_name)
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(full_fixed_code)
-            voice_summary += f" I have saved the full working script to '{save_name}' for you."
-        except Exception as se:
-            logger.warning(f"Failed to save fallback fixed file: {se}")
-
-    display_target = filename if (applied_to_editor or file_path) else "your code"
-    bugs_text = "\n".join([f"- {b}" for b in bugs]) if bugs else ""
-    return f"{voice_summary}\n\nResolved in {display_target}:\n{bugs_text}"
-
-async def inspect_code_only(question: str = "") -> str:
-    """Visually inspects code on screen without modifying the file (Zero To-Do UI)."""
-    mentioned_file = extract_filename_from_prompt(question)
-    ide_info = get_ide_window_info()
-    hwnd = ide_info.get("hwnd")
-    ide_name = ide_info.get("ide_name", "VS Code")
-    filename = mentioned_file or ide_info.get("active_filename", "active_file.py")
-    rect = ide_info.get("rect")
-
-    if hwnd:
-        bring_window_to_front(hwnd)
-        time.sleep(0.1)
-
-    code_text = ""
-    file_path = find_file_on_disk(filename)
-    if file_path and os.path.isfile(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                code_text = f.read()
-        except Exception:
-            pass
-
-    if not code_text and hwnd:
-        try:
-            import pyautogui, pyperclip
-            pyautogui.hotkey("ctrl", "a")
-            time.sleep(0.08)
-            pyautogui.hotkey("ctrl", "c")
-            time.sleep(0.08)
-            pyautogui.press("left")
-            code_text = pyperclip.paste()
-        except Exception:
-            pass
-
-    if not code_text or len(code_text.strip()) < 10:
-        extracted = extract_code_from_text(question)
-        if extracted:
-            code_text = extracted
-
-    screenshot_bytes, _, _ = capture_screen_image(rect)
-
-    diagnosis = await diagnose_and_fix_code(
-        code_text=code_text or "Code visible in screenshot.",
-        screenshot_bytes=screenshot_bytes,
-        user_instruction=question or "Inspect this code and identify any bugs.",
-        filename=filename
-    )
-
-    bugs = diagnosis.get("bugs_found", [])
-    if diagnosis.get("has_bug") and bugs:
-        bugs_str = "\n".join([f"- {b}" for b in bugs])
-        return f"Boss, looking at '{filename}', I identified the following issues:\n{bugs_str}\n\nWould you like me to apply the complete fix and save it in your editor?"
-    else:
-        return f"Boss, I reviewed '{filename}'. Everything appears clean and error-free."
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+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
+-----END CASPER ENCRYPTED FILE-----

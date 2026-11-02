@@ -1,129 +1,104 @@
-import socket
-import logging
-import asyncio
-from livekit.agents import function_tool, RunContext
-from .visual_memory import inspect_focused_image, get_active_focus
-from .screen_streamer import get_screen_streamer
-from .gesture_detector import get_gesture_detector
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-def _broadcast_vision_state(state: str, udp_port: int = 49152):
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(state.encode("utf-8"), ("127.0.0.1", udp_port))
-        sock.close()
-    except Exception as e:
-        logging.debug(f"[Vision Tools] Error broadcasting state {state}: {e}")
-
-@function_tool()
-async def start_screen_vision(
-    context: RunContext,
-    task_or_query: str = "",
-) -> str:
-    """
-    Activates Casper's screen vision mode ('Specter Vision' / 'Vision Mode').
-    Enables real-time display streaming and the glowing neon cursor trail.
-    ALWAYS call this tool immediately whenever Boss asks:
-    - 'Enable vision mode', 'Start vision mode', 'Turn on vision', 'Specter vision', 'Engage vision mode'
-    - 'Start screen share', 'Share my screen', 'Screen share mode', 'Switch to screen share'
-    - 'Can you see my screen?', 'Check my screen', 'Take a look at my display'
-    - 'Tell me what's on my screen', 'What is on my screen?'
-    If an explicit inspection question is included in task_or_query, this tool also
-    analyzes the screen and answers directly.
-    """
-    streamer = get_screen_streamer()
-    if streamer and not streamer.is_enabled:
-        streamer.enable()
-
-    detector = get_gesture_detector()
-    if detector and not detector.is_enabled:
-        detector.enable()
-
-    _broadcast_vision_state("VISION:ON")
-    logging.info("[Vision Tools] Specter Vision Mode ACTIVATED by user command")
-
-    # Determine if Boss asked an actual question about the screen or is just activating the mode
-    query_clean = task_or_query.strip().lower()
-    activation_keywords = [
-        "engage vision", "enable vision", "start vision", "turn on vision",
-        "specter vision", "screen share mode", "vision mode", "start screen share",
-        "open vision", "activate vision", "share my screen"
-    ]
-    query_keywords = [
-        "what", "who", "tell", "explain", "describe", "identify", "photo", "image",
-        "see", "read", "error", "code", "look", "check", "whose"
-    ]
-
-    has_question = any(k in query_clean for k in query_keywords)
-    is_pure_activation = not query_clean or (any(k in query_clean for k in activation_keywords) and not has_question)
-
-    if has_question and not is_pure_activation:
-        try:
-            inspection_result = await asyncio.wait_for(inspect_focused_image(task_or_query), timeout=9.0)
-            return (
-                f"Full-screen vision engaged, Boss. I am looking at your active display.\n"
-                f"Here is what I see on your screen:\n{inspection_result}"
-            )
-        except Exception as e:
-            logging.warning(f"[Vision Tools] Initial inspection timed out or failed: {e}")
-            return (
-                "Full-screen vision engaged, Boss. I am observing your screen now. "
-                "Ask me anything about what is on your display."
-            )
-
-    return (
-        "Full-screen vision engaged, Boss. I can see your entire active display. "
-        "Ask me about any text, code, error, or image you are viewing."
-    )
-
-@function_tool()
-async def stop_screen_vision(
-    context: RunContext,
-) -> str:
-    """
-    Deactivates Casper's screen vision mode ('Vision Mode' / 'Screen Share Mode').
-    Turns off real-time screen streaming, dismisses the neon cursor trail, and pauses gesture detection.
-    ALWAYS call this tool immediately whenever Boss asks:
-    - 'Stop vision mode', 'Exit vision mode', 'Turn off vision', 'Close vision'
-    - 'Stop screen share', 'Turn off screen share', 'End screen share'
-    - 'Stop looking at my screen', 'Dismiss vision'
-    """
-    streamer = get_screen_streamer()
-    if streamer:
-        streamer.disable()
-
-    detector = get_gesture_detector()
-    if detector:
-        detector.disable()
-
-    _broadcast_vision_state("VISION:OFF")
-    logging.info("[Vision Tools] Vision Mode DEACTIVATED by user command")
-
-    return "Full-screen vision disengaged, Boss. Screen feed closed."
-
-@function_tool()
-async def inspect_focused_screen_area(
-    context: RunContext,
-    question: str = "",
-) -> str:
-    """
-    Visually inspects the user's active desktop screen in high resolution.
-    Directly answers questions about errors, code, text, photos, diagrams, or UI.
-    ALWAYS call this tool immediately whenever Boss asks:
-    - 'What is this on screen?' / 'Tell me what's this on screen' / 'What is this?' / 'Look at this'
-    - 'Tell me what is on my screen' / 'What do you see on my screen?' / 'Have a look at my screen'
-    - 'Look at my screen' / 'Read my screen' / 'Explain this'
-    - 'What is wrong with this code?' / 'Fix this error here'
-    - 'Identify whose photo this is' / 'Who is this?' / 'Read this text'
-    """
-    # Ensure vision mode is enabled
-    streamer = get_screen_streamer()
-    if streamer and not streamer.is_enabled:
-        streamer.enable()
-
-    _broadcast_vision_state("VISION:ON")
-
-    try:
-        return await asyncio.wait_for(inspect_focused_image(question), timeout=9.0)
-    except Exception as e:
-        logging.warning(f"[Vision Tools] inspect_focused_screen_area timed out: {e}")
-        return "I can see your active screen, Boss, but the visual analysis took slightly too long. Please ask me again."
+vUCR/pgG/QurfPFZqYWA6gzmKnFCWzZvTGpERZ2VUZXH3DFv/AAbWoSUzGOywh9zqPOyV7Up1XMP
+TG3ZK2U9DG0aNBb1OxUPRbazMatAbbof7rEkH3OPjg+SSOKj1BosaITAkTMvi39CzCtV3f+QehpT
+HOO4LoS6Hlb9wau+zIRtBU5CboDFyxNgyMI4Jh7GQ/Y0NDxrBC7bBTbkKYUMxAwTpHWC3HgaXKrM
+qzP08efUEIiCss1n4oGzvmmwoX6TLvWZ+WZ5UeChK37VqlCvLFnvW0NEcQQogGHh0Icq1qtOmxO3
+9aVC+RagAqcv6XRoo0LRIGq2UWLJWTWuBFbVxn/8uWG62tcrbUF86DQ5l/RySOoxk2H0/a/sn9Cc
++hs8Vc0yqieSjCPgwaEVzvmO2LVm9bdoAq2kM+ypRElPne1rzIVKObdxi81PkL8sRHxhGGNiQyLQ
+3Y2KWO06X6odrzu1oxEAGXrhdMwrOtlvblBC5lTI5k3KQtmepaD6cy7izoFgMOt1Oi+4dNpAuIO0
+n9NYnMmiKitaNPzYQAfaCaRaFpcJ1MdY64twZwrGEXk+YnJAnvq2NfwCgr9clz3/R2JADCKjXq/X
+IyaDr6ybA5+xpoK9+P2on4+VT4Xw0vQUTC8RCDyyV47e5jbmOCefdSzhIQbtRlWo2juG1/2tGBcy
+ga53FCc3IoHdc1iBin7rTPGjTuTYIVH6QApO0nIpLAh+K71ieuxKun49gs1dtxFUB1cROojRqEI/
+vmsaqq7a/Yg6cWKQTEMhFlls/tQRs5IYRDjnuhODozdYMJfSxIzxgJn7k411n+muMD0gktb1N6ZE
+7QasW6sTaXzEea60jVhboONX47CjgiEDqBy0qj0UynPXKK+dB6GRbP+cZbW1lioiU6kFVObqtxQZ
+GAj0Pq/IYmUF2b/KNs3JxWRV7BW7M8vEsZd+L+LccK7mtgKro/vLYEJHi/J7AFleFc4BCVN+09LY
+a68vxuYoBs+aTWY3O0e1mzC41wQBoReOs5Q2mWLYnsEQZP8uLOFoG/gRD00wogMp9S5QuCBU72B4
+PPrHZ5zL8qpVBaRow1dNp8i7M1Zswog89MaxYZPbluQq+5qdOLIDwE3h7rzTNTBu9UoqqmfcJLE9
+//0xCHx/ylD87xx18lIWMrbeBmJ1OLy+lNyr/+OQhKcOfqlXa8hpSLQqlm66RFltt41a1/mBC/4Y
+9GNmD5o6ofC7V6arDfSCHJoPfPSu4RyAho8nVPXlBKik/jYX5sdq4q70DHFJuT/gW8dbiC2AZsMi
+nubv3HrqfJG7WMb2N24NW61Szn2xhiD6vjHlUs+Aqwc7EbhZRwkjlLxe9S/XDHa4e1TzVLTUgiJ4
+itmALPaAzaXGgq+INjLsBGZhKQ6/HkL4Ir1PLioJ1NlRHyut8+bUX1NuXKed7thsIhAaZipV4PxO
+kqHGA9Pu8ZGiQ70Yk+7xKFBmRMzxyQQCiQ458bSPgdH/zIsnQ2HT1265qGcr9XCVfBSArkfifeqQ
+BkiEGCJvanoF6HS3yAfLfL0WdycA8BRl0FktqsFclgvBVx38DD5bY+KUZ2oW7fXHxyGsAdQ32/HX
++qn63P4t6TkaHk+DxGizFvabgiDeQTFaBkuCDJsqLMmB9hAeAbS9Vv+wB7OaP16XC3PlJg8vFTYF
+AsEEQfVccc11wEjneN9K5fALmg9s+4LDPKni4Pg9iPiLAYweYgI6u5cG6BSKL0ZODEiLIkd3xElJ
+li9dSMBNMCxi8vjdhGbiMeo0KzSyaODjzczKXNUPKQ4AfX0T7ICxvEZ5aqWtOu9YojYTNF42G8Tt
+KLgE6VmMp2H9vXMI6fz6LFjTK7BICMPVvHc8Tw7xNGQeGN5Gfsm4E04GDmcNfs68Lf18l/G8kNo8
+bJoajiAn3MV2BWvKnGIRM2Rrgf0cuU4fBvLgvK+SQ8hlM0uYu4C0YqFpaCKgzieXd+0oWmU1Sbq1
+OOnKEoLwg6IgPfti46tQKob5+DMwIGphz/jdGzXfhrkEZHvXoGIZ12CtdEAn8KSy5X4tZ/f1AfAh
+jd8vHhFl9GUcV3GH6gNDvus1NhHvpmDBrCOLIjXedP0avKcQ1J8zJVqm3o/h3ifSHYI7akNntYZR
+ae8qRRUSMwudIYpQtWAiw4dsyrI5tJ9J6+kZmBG+fTm/HOxqux0VT8csBz6Q1hcn2xjEjOt3n2cN
+odonqaOGRbjLzZBRkOaDmq+S01CJD1ZP7OXxv2tJ097izCJAcCIO3irkqIYb8w7vRid0YDmk/0b4
+EAnyirha81+bqSoyLjDZ45bQwAr4bjWpVrJUQfOVctRsHn96l09q1RcmYV/kRBSGXE8a46jQ3+r+
+c2G70p9/8cwlm3RWQntmg/c8PymUwUPefvKXvwYfJoKoYl5+h7Ax9ZQJ+iJLvIOJz6xu4h//ek5P
+0v1nDo7iI6JkDVqlDsZqz8xQgxmfVlTC+s8nZCRz5B/lWqGWvJZdAAzilxVdJ1TBJBvbECLlPZlh
+5RijgxQqdxqoyWhPg+8Tha8jKVvhQxUseQA4u73gU9c71oS5K4B/uksoDgBaARFYhCzJRwJNZ46m
+ML0D1u1eekkBjnXLtXwrgr1Bo2QArsa6Hgw83r4EG7BEZvZOhOpE1Xh/0WcVkOZlS9xnHfMteKW6
+xLyOe/WRRtd9MkXah9JI1K/fzKaoj8A60z2nsLiodUQmDhVDM7F6Q10jIZMSC+Sz0cuzLGbVfX3r
+tfIzdIhsLr7C/2DbVNALIKDFgGOAc8wBK9pql0/uoGXmTTUQBL5Ic4WnaKrMdy8yJiHKdlREgsl/
+Pn7b8LKK9jaqf2glJSO/115PxtH+SrRiwMvBZ9ooerZDMKvU9bZjctIAENidp58MjgyVongVJWEx
+rTt/AdMcBNVe5O2nS39C9aF5CJT/pg0HWpU8358jU46GOIeZUPDrBT1D/bUvVsAT6H2Cc24J0hHd
+/G/BCp/+r2e5p2aAgcKY0IjqPX9tOc9YnzfImQzwXLn6O44+HlTdEgaSy9ev8JzwfR4+acm1d85V
+ZAWofRZzdzLkYYstVFZ6wqcEK5g4JIzUBOjUMPa+bR73Yyxja/so0146UFsK3rL4SslkCx5sem//
+XtHMkp9sMmh6kVbJh2m59dYIySOrs9UDjpY0mI218VfG+VQtFlIgI5fTV7MfkHt8cfipjJdeLiuH
+L4oTRGZFpKgpQCuHrxjNr4Slf8gcfVz7AzS8DOOFONsbt3Gs8sN6vvirwQBcZXnPEYJAvXFBJxTt
+E7j9dV56OJqEMJr4Sl8rimvg7p4YifNMamabUoIL4pFii7Mc6xjXDeO8Z7yIMOapK0aX4RcFTr1R
+wtSVkWivcalghHjXBKLe1RK/JS5ZCRsfkz3Qe580lGt6aEupC8DO8MEMl/Yc8wsUxpCgSXiyMOu7
+24q7qt0q0P+ZuzfywKr9QFoqG7y6wkwzXJ9089UD3ERNmGxKD0mxLvd8CtMge9fYrTpJTPkH7dvn
+jA/3TyVC4nh5+Wh53TKVAKftkgk2pHjYArla+J7+bELu9KlFdL7rqIc9EQEpL1SS8RrtcyPlTc96
+RZ48INAJ+rWRsp9LzqK4RtTcdM3SPpLbqZmqS+X1blfGnToFzB5Q6spYv34KMp2vqRT0V13MAszq
+JzlaJ1Ltv92/QcbUhWKncfGNkfUs1vcgrStx/sQH6EWSHNgGF+ScOVrldu4nLzoTX9QJQxg/XOew
+U9Ps+T1fzcVGrNb2bNdU6qjjjkxfIPT/YrXX5tpxKupYK2m0rqEBZZVpr0WIukXHEArnY2nqAgYP
+C+g5Tn4YtpKMnuirhMDWnbng6V25PShJG++jKk4ZgXbQBicbgBg/k0uJGlxtT3SHGZ4Yn/RYEr0y
+o4RuaoobaqxcS0QGc853S+uC47rYEglLP2s1cgSR+jOJQJe24ptGrsIoQXl07OI4vnw8HmIf5M4u
+RrEFI1/wSKY1V/e0zDygpzF5ulQ0BdNSprN1eD0uG7xaemsHYeBZqJlv2U7EbWpgiqrpedKtyYbj
+vx90dtaNLQdIthW2U/cVTb8R5RZiiBNl9LxinNnbOQgbJTw4C75elNZbS/DxeH5AxXtpJ521enW6
+MEPnApcb5wu4d/FE84IYMlD5nDVa5lms02LkK+TuD+ZvoBJtojFTgz9cy+j7lVft2/kxWkK/dZeb
+Wvepi9npbRu5BeRuYqJ/bOr1rOgVR1gcMhF80ukUx7iVUTQJ5aveV0xjv83+1iITh42r44q6pMOw
+sNuc6Nwy583i9vjBZD2c2BebyicEs4xu5ZyCkgGnO2qeYs9zQ85eUzQHCUcyqCDv30me4VkclGED
+6twZ1k/3uD14btYx4HTSVTpnvNwGgxXE9tgX2wKmaNhU2MxOPR6EYfgIQnEhNZzSIH8wE6M8YVvZ
+cRSduOOT/pcrTYgt9z0a85pu8/CT0+a0YXQYfFDaiS7QrNEm0jg0bZE0KKnEDZFwbpV4aSr8OSxj
+eBxMj8j+NnbPGfGbwhZMxkjsbU8dy4Zdzrb/eHgmgeCrcRHPTSwkDiGocJk2/YPDTq5KnTyrLe4T
+HWFZpTFNgMv15RjzDY4P1vOgfaj6YZWUfbSUqeJ2F6mPBWIYnKrr1nYsSfWQLCQNJlkJ5A8NpxeV
+Xw6XE5G7aL7HKdDUdKD0TE9EL/rjtJRhtuLgh1Ax2KMRQxFhDFI93iF1PScTrNz/I1E/M6Z36z96
+t1j5B8AlVF356QRuKJGA8781rF2yOvgcJW5o2nSoOMHugoF089zO/pCy3gOZResd4mjSKii+QMTC
+aLykOc+YJkaRyG3pmRreIlxrj1QM7tk4zTBt1QRpPr9Y65/dlUPKik1AiHlUhbINjPkSAqlPa+cx
+znFNFWOESOVKmP2UjpEGi6Pf1Kuxy/InsY9mnJ7KhVdi7HMAqDXLkPyBlNc1l9Onz5NqoyUT0/rl
+b/dPUaK4ySBlW7xDFnLQ4jhzBXdtyeRR4weubR1TSJY4TmJZOart6PbTGWQl7ahqob9rQ+VvhkuS
+KWrZC0vH8Pgyk4PbP3U4YUSJeaPnTgRQR0QpyLZ6c5tRFOxHVj6tyDL8RmZ282pgL9DhFHigprB7
+xWx4uy4ovJuoh/QlvR7jNZWwm69IavRTrECuaqY45oOLoPYn9W8Kif/akrZbjFWYyHGQ5ODcI/tZ
+sufRvW7DWJSQCeXSU+QKEH09tyf02rqQd5OXjYM6qpZYOdLnv0AIVATEXA0eh7AElX7gnH9duAK4
+ITI5UJ0oXZ4F706krokfdiYEu3afU+6VVHr3sjvqmxiU2h0mWDtdNWE/lluAcplc8FLE+RKTQcYR
+h++Co/NMF866yU81T3bxd4TtFxJO3tp8hSJZTZ7t8MU00FP7S0J8qVTSq+NwPLm0b41bCqaOErp6
+/XA04yAjS5XZnnWaPnvxWnan6PDncYR4KSOU2E/5ue64tCL3Z/3nGCRbomTKMdynXcobpr9Jrgcj
+SFDxHr+KH03D0vbZ4Y3SlmMV8bDcl9nT1sgK89HqLc2ZWfc79xe5DhuXbkQ59pmQiJE01ILBnJzp
+iOtvYqLjYq+vbvpn/4BHzfgjIVaJkH0IXY20v8O5OpCK2nLLnSL2+G5BXsnTTyue3R4eBu9R6YK4
+3VeakYlykGgYZJ2xj9vBkY1vAaDZ+iXj7HiHVBfakUCxRIwGJVTLLQjitJm6wK+C74G1g72sIP+H
+AkB3MxZlfG6CGWzZUApYj7nw088Z5hGekPhpV3O+1j8bwmYV/Q1DdUXJxtUmn/q/BR32yNSuHanx
+TJqzrlwlPeF7zzGvo/F9JiL6Jlo3ikVUCsV1rbHyP3VjWql13te5R5JNh7mABI6ap9u1rDYhl0ca
+fkcIxJpxV+EDsjg8t/gMuBvM+9/cSSNl3VyId9ZzmLKocOMzfwRhOftgqQRBT1aFxTC8keX10zxb
+6X9GBsmwMWLEfOB5nImFcrpRewSlsel6mBLnubHOce0FSOB4gEq/LjnKXtu9nC5ObhxwlntWp06U
+5B/oYLm0VdLhrHzl+HoiWQJ4XAXQfzObumLccwfx2P5uCmqU2BiD8JtkUuVZHW5Uny3fpHQehuAE
+e/Hk6LZgMyN3TE61yTWoK4BXj3LdU8w7T06AeBFXtdBy6r9QtsV50D2LFgs1ugbcLF+Zm64c+D+q
+Ftg84mFb6Y35s7zDEM7iZ/vaU98/TRa0vchTIChRCCLsH7yJNXoCrrbl4hON6F2fyv6B2iASJA6/
++yoIXkKBxwVqbKCXIDHwjs9G1Y1HzsekVOEQjsFeSKesyCgBUBeCxdjHKNy+/KUyKwywlksYBOBi
+JbohSSymV6zu4uz/Y2B0oCcUZsRl6JafIAIzvpck/Psw/iklIUsjtS6bBNWVX4IVeD4p5InLfPQU
+1vFKdmXHUv/AbiTm+rE1EesUXayxye8wIMkoMpkPl148tF54IXcVnJjkRWRB5IcidMe3TJZ1scku
+kkun41Jbp5ILzTFF+mieYsHJdxJ0tuxCyV5vZPp+gxxdkjSYTmNEuJaMz9SQiEMnyCHDCp7/YrUi
++cnmWmMS3xXYUN7bsE6uC5RlNN217JXRPOEoIYEJCKTQ4yUAqkDQykYFyunQZfXYic8sT1NjhjmE
+P4pLvrp+y3yGVrRtKTf4CHXo6GW8RWepv9UfeN8HmVxHnwtFKZqxR3KLvufvIEarXUAZSYWn6MeW
+NLMlqlbUCJqv6OrziE3dlUfRJ/KpncYA5oOkgr7ycfoFnEKYhY7yt6niSla8GvHRCHEtb6McQ6V2
+QPkocDKzuwraI2UvOpEV0Y2EULbjD3sTOBOXqLp4J3hIXqGd/KtJ+sMHLjUotkbminmmSlPCB+ws
+SF8O4Th8chcdryAnoNXrrHYFWCVs3Joj9eqlW8V5ffrqCjbH1yLAIOzLvCKb0rVOXOjSm8YO+v9/
+ODhAsX6na4pgR7hAyp7oZx5wibyqWyqXyYMdSG3m7f9cXgqVncxOWr/sAK2smPeLeTgnMy4HN5sv
+1tU/Eqi0RlD2B5mGrHe3rACH4Vu5I6maE4apwTfURo5l1VCEc9+jZhgZ1mGoaaEbqsBgmrGafS9f
+j9sPkEnL7Y1g7a3AqhlqrMN5gLUGIr3bZWhYfGwqqaMfucj5cyFRMruyb9TVy2Syz8OwlQzfc06M
+hCRuLcvqkhcp3Sdv2+PcoLc+cy/tq5PGwdC0ZnEl1rEHcKBhtJVT0cDE3yIKp/tcSXWxXhv1uFvK
++WdW5S9udYJeXWHKorA2L8tH/c42EpUZ3bbtAFGS8Q2DBZBQZozXJtkk19WmfoQ53YeeYEX/WhE+
+Yc7Og0kAehvEVHQCMkuzhMILoA3XhVI6HroBjx160kMs1/8RZ0MdUiYvB4jUisgVHlper9+cC+Ib
+wpwdWtymtgLFQx2TISaJNfOJUNVr
+-----END CASPER ENCRYPTED FILE-----

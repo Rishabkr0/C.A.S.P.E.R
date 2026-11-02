@@ -1,307 +1,169 @@
-"""
-Quick Test Script for Chrome MCP Integration
-Run this to verify Chrome MCP is working correctly
-"""
-
-import asyncio
-import logging
-import os
-import sys
-from pathlib import Path
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-logger = logging.getLogger("chrome-test")
-
-
-async def test_chrome_installation():
-    """Test if Chrome is installed"""
-    import subprocess
-
-    print("\n" + "="*50)
-    print("TEST 1: Chrome Installation")
-    print("="*50)
-
-    try:
-        from mcp_client.chrome_server import ChromeMCPServer
-        server = ChromeMCPServer()
-        chrome_path = server.chrome_path
-
-        if os.path.exists(chrome_path):
-            print(f"✅ Chrome found at: {chrome_path}")
-            return True
-        else:
-            print(f"❌ Chrome not found at: {chrome_path}")
-            return False
-    except Exception as e:
-        print(f"❌ Error checking Chrome: {e}")
-        return False
-
-
-async def test_nodejs_installation():
-    """Test if Node.js and npm are installed"""
-    import subprocess
-
-    print("\n" + "="*50)
-    print("TEST 2: Node.js Installation")
-    print("="*50)
-
-    try:
-        # Check Node.js
-        result = subprocess.run(
-            ["node", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-
-        if result.returncode == 0:
-            print(f"✅ Node.js version: {result.stdout.strip()}")
-
-            # Check npm
-            npm_result = subprocess.run(
-                ["npm", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if npm_result.returncode == 0:
-                print(f"✅ npm version: {npm_result.stdout.strip()}")
-                return True
-            else:
-                print("❌ npm not found")
-                return False
-        else:
-            print("❌ Node.js not found")
-            print("\nInstall from: https://nodejs.org/")
-            return False
-
-    except FileNotFoundError:
-        print("❌ Node.js not found in PATH")
-        print("\nInstall from: https://nodejs.org/")
-        return False
-    except Exception as e:
-        print(f"❌ Error checking Node.js: {e}")
-        return False
-
-
-async def test_chrome_mcp_server():
-    """Test if Chrome MCP server can be accessed"""
-    import subprocess
-
-    print("\n" + "="*50)
-    print("TEST 3: Chrome MCP Server")
-    print("="*50)
-
-    try:
-        print("Testing npx access to Chrome MCP server...")
-
-        result = subprocess.run(
-            ["npx", "-y", "@modelcontextprotocol/server-chrome", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-
-        if result.returncode == 0 or "usage" in result.stdout.lower() or "options" in result.stdout.lower():
-            print("✅ Chrome MCP server accessible")
-            print("   (Server will be downloaded on first use)")
-            return True
-        else:
-            print(f"❌ Chrome MCP server test failed")
-            print(f"   stdout: {result.stdout[:200]}")
-            print(f"   stderr: {result.stderr[:200]}")
-            return False
-
-    except subprocess.TimeoutExpired:
-        print("⚠️  Server test timed out (this is OK - server might be downloading)")
-        print("   It will work when you run the agent")
-        return True
-    except Exception as e:
-        print(f"❌ Error testing Chrome MCP server: {e}")
-        return False
-
-
-async def test_python_dependencies():
-    """Test if required Python packages are installed"""
-
-    print("\n" + "="*50)
-    print("TEST 4: Python Dependencies")
-    print("="*50)
-
-    required_packages = [
-        "psutil",
-        "mcp",
-        "livekit",
-        "google.genai",
-    ]
-
-    missing = []
-
-    for package in required_packages:
-        try:
-            __import__(package.replace("-", "_"))
-            print(f"✅ {package}")
-        except ImportError:
-            print(f"❌ {package} - NOT INSTALLED")
-            missing.append(package)
-
-    if missing:
-        print(f"\nMissing packages: {', '.join(missing)}")
-        print("Run: pip install -r requirements.txt")
-        return False
-
-    return True
-
-
-async def test_chrome_server_initialization():
-    """Test Chrome server initialization"""
-
-    print("\n" + "="*50)
-    print("TEST 5: Chrome Server Initialization")
-    print("="*50)
-
-    try:
-        from mcp_client.chrome_server import create_chrome_server
-
-        print("Attempting to initialize Chrome server...")
-        print("(This may take 10-20 seconds on first run)")
-
-        server = await create_chrome_server(auto_connect=True)
-
-        if server and server.connected:
-            print("✅ Chrome server initialized successfully")
-            print(f"   Chrome running on port: {server.remote_debugging_port}")
-            print(f"   User data dir: {server.user_data_dir}")
-
-            # Cleanup
-            await server.cleanup()
-            print("✅ Server cleaned up successfully")
-            return True
-        else:
-            print("❌ Server initialized but not connected")
-            return False
-
-    except Exception as e:
-        print(f"❌ Failed to initialize Chrome server: {e}")
-        print(f"   Error type: {type(e).__name__}")
-        import traceback
-        print(f"   Traceback: {traceback.format_exc()}")
-        return False
-
-
-async def test_basic_navigation():
-    """Test basic Chrome navigation"""
-
-    print("\n" + "="*50)
-    print("TEST 6: Basic Navigation (Optional)")
-    print("="*50)
-
-    try:
-        from mcp_client.chrome_server import create_chrome_server
-
-        print("Initializing Chrome...")
-        server = await create_chrome_server(auto_connect=True)
-
-        if not server.connected:
-            print("⚠️  Server not connected, skipping navigation test")
-            return False
-
-        print("✅ Chrome initialized")
-        print("   A Chrome window should be open")
-        print("   Check if Chrome is running with debugging enabled")
-
-        # Cleanup
-        await server.cleanup()
-        print("✅ Test complete, Chrome closed")
-        return True
-
-    except Exception as e:
-        print(f"⚠️  Navigation test skipped: {e}")
-        return False
-
-
-async def run_all_tests():
-    """Run all tests"""
-
-    print("\n" + "="*60)
-    print("  casper - CHROME MCP INTEGRATION TEST SUITE")
-    print("="*60)
-
-    results = {}
-
-    # Run tests
-    results["Chrome Installation"] = await test_chrome_installation()
-    results["Node.js Installation"] = await test_nodejs_installation()
-    results["Chrome MCP Server"] = await test_chrome_mcp_server()
-    results["Python Dependencies"] = await test_python_dependencies()
-
-    # Only run advanced tests if basic ones pass
-    if all([results["Chrome Installation"], results["Node.js Installation"]]):
-        results["Server Initialization"] = await test_chrome_server_initialization()
-
-        if results["Server Initialization"]:
-            results["Basic Navigation"] = await test_basic_navigation()
-
-    # Summary
-    print("\n" + "="*60)
-    print("  TEST SUMMARY")
-    print("="*60)
-
-    passed = sum(1 for v in results.values() if v)
-    total = len(results)
-
-    for test_name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"{status} - {test_name}")
-
-    print("\n" + "-"*60)
-    print(f"Results: {passed}/{total} tests passed")
-    print("-"*60)
-
-    if passed == total:
-        print("\n🎉 ALL TESTS PASSED!")
-        print("\nYou can now use Chrome MCP with voice commands:")
-        print('  - "Skip this YouTube ad"')
-        print('  - "Play music on Spotify"')
-        print('  - "Read my emails"')
-        print('  - "Search for Python tutorials"')
-    else:
-        print("\n⚠️  SOME TESTS FAILED")
-        print("\nCheck the errors above and:")
-        print("  1. Install missing dependencies")
-        print("  2. Verify Chrome is installed")
-        print("  3. Install Node.js if needed")
-        print("  4. Run: pip install -r requirements.txt")
-        print("\nSee CHROME_MCP_SETUP.md for detailed setup instructions")
-
-    return passed == total
-
-
-if __name__ == "__main__":
-    print("\nStarting Chrome MCP tests...")
-    print("This will verify your installation is correct\n")
-
-    try:
-        success = asyncio.run(run_all_tests())
-        sys.exit(0 if success else 1)
-    except KeyboardInterrupt:
-        print("\n\nTests interrupted by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n\n❌ Test suite crashed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+WRPSGCgXyYa66MbcHuiqHGBc+WNplCOhJ0ltOa3wiom/VsszrGTta/YztXICXaPxWKbd+5DMaFzb
+x8Iw0mA0ehzDx9v8FbI2aQ4ld0aWkIanXxnwsWZ3ErJF6fPui/6UlEQlSAdgnwvyjmBjqsUFWYm2
+MS2+rTqHqN+wM0t4pV8TnnIS5jwRV/LAKZY8BVxGk4oSuJ6GxScnCINrqEbK04KzTdThfPn7402a
+cfqfFL+GpalDe6IedFXl4ZoZlq4HPK+QBOinz2mR3/QgdROMtSVEaNC28Zg9OWlGuKwVmPG/qG7f
+eGZBszCmYDTxIvux+PwpP66xd1fZz3vTRUk5UnkHVrD2cWPij4YzeZLdHBLodIJ9FNvrompkM9vG
+KicqPFhZqx5GQDL76FumbWG5Cm0AbeaIJEu81l+Bw9mYjeLnXZT3ieImDE0QUp0AWvQchRIT+vbH
+lPwofdgl/HewhhXmeRRCgip1cqec3g9C/I+Fg4fJv1r0iTliicsiQITnnDAQcUFjtb4gbuLUV7SW
+gHnzFoAvuaL3QSI2DxXFjqLwJwI6kYuO3znthqyCiJU3gi2Ea0bjrqygub5jtGnCG+GacNnx3Pef
+eRknWvVkhCZuQx9pG9a3ZNlh/IBVmh7g9vCphh96W98xqgOmHt9EPKru9Id2mU8AJKSfr88IHEQW
+NJeAf2kmuH/3a9WkZheSZig+6IgS8mGki9up04ynGwhR/ehxKOrTOB+326xFAxGTswR23QKosifq
+Cf1/iBYFLRHznoSN9nemgszgemSbVm9JqXN6BA2epa87awdV3+pa6DQZyLKb2lVRvSie5v0h6sjK
+UsIQxTl994afGV8n2e2LcFRF5FkG52uYLDAvS3vr11a/pdn5WGgD2lMo0uZS53Kr2XJzZoMVJgdq
+z3rixHpV2vFfi0KtW3shSG7Tb+yrgcRINdjg/Ze7HrBaUkMRcu3us8X2RM/so2Lvgf7hFRcYiJYe
+FhSWYrJq22Vz2eGI5vwLnWjsm8l5+uMapsyCCkzlkNh9cFi9j/lfcfbXKRnDOLHvq707q9qa+iCl
+p/CDcC44+Ynp2dQ/+C/hG6jMkQlXkRQ4g9QRhinFGjF5+O3kwqW8nxRzO6JFjPIxL7PDh8p7xZ7z
+QjzMRbiBzMkchlv7kbYGa5t9wMVCOR5EFwpA2Z5zyKENR4eSB6tBahhk0j6CVdfENiMcwW2YqfLZ
+nOuvjY0wNo57pdKlEUtCAF7mxWcCWIv/LDQHoOSEUJbHcCL1UDygggvSxuFgiVaVIjhaB9nifk3Q
+SCnK07lmw14TrYlOY1r7MpTs1o/crS/HDzJNrXmn8ykt+HSTwcn4wy8Y0C2K7XUqApMOL15ddHsQ
+yslfWR4lxyLW3I0bX6nADdIYRuGeySnJ83qbd2fmDpKdb0NULS1X5F/szeyAWLq06BRC0tLnEcfu
+GmTgeQcbuNBVSsDOfqBNXY9xMQijloGE513xTzCWuJSdH9zQeBRo2STziq9PLITiO/mhZxaRkYKy
+Jp5Dd+SWmRGuIGWXEfLyk2x4+kYeCiI/fP2Zuxtoi8mgHyKRxcbT6qHR+lTEnITj5vhclCUQOVU/
+VToyHXqPUYEJJJgganaQpwm0cWi3d7FdpZUEB+zKlPKBAJ8mjcsve6cv14zQO4YjacdKwET7rPYH
+e1pADG0Okz6AQ8d19I/ePrPnPdgFBUCDb+tW1Vks92fCkZisF8dCcMuCbdbmv8aOrZzTTrvWVIp/
+gsyhQcA8sDQ6rJTJ5ZDjMzlO2iiltkHdyfVqO1zgfZ2dOWjVRzyiv7kXOHUNjTnD5KSV45g+9VFi
+Dxz0eHTFSeNfF8imUVczBIViJ3u85lJThE/vSBiuk7+1fYU5m1KOQMXdvHbbiDRDVzdkslvwQVGb
+LODH3MOHsCAOYOsd6Jq0zgcwtG9auhkT28zNdtyrJwOEye+uXi3dJ/e3RjvJa0ydy+d+vmAN6o1V
+XoTx6K8FDEK/pY/2TWOfvsyDbHOvyVfxYecsUNPWoPUDynjwHCIKS6mfawNyZio/t0nG8hrWcXUE
+Az24f1YsKfugk+t7SzOuyk1wBnmQP3ihwTrsYNdGY+n+/daUn3/cOrEVuIqGxXymqXGXjgsIhZQd
+rRMuiwAiOIdfcFMMN4bglLmyGg/k1w1iBmZ95NDFx1MwX2/u0MkBznORGeFu+Uur1RH879K+crXy
+iCNWNVo++/N4vGTjb7F2ylklD5aiR09oQ4ahf2ZcC8AWdOzhaUjbpawjw4MUJbl2CfOrLCP9iqJj
+VnfiHsUzwQ3T3VeaQ8CAWRzOYGtshtdhwBnMLwjypu2u8dbSb+YoLF4tSRHllE6ShoUvLU8bM1qe
+Ui/Ad1hXx39TgoZdQt6/9ktckut8bK/hrAsoshVyqfj5STvQmX4OmyrOz7XNZLs9W4qi4N8m9JTP
+tp6tfQJ3nBe5rgmThEIAZd6/f7pSMWXxsX/Z/5y4KhpH3U2FHsH0xz1P+lzqAXEHW43eA5Zu9Nkl
+0iknYKMgfvvH1zN63tqiX+bOKqKMo+gDq4EHxkC7dvnY298sfGaoseQyFUotnRGXXRywwJaZ/D0p
+SUBK7HbGfy0cXI4L7mX6wboQ6IwMANw/mNJNUovLPfYXrwoKuZSImOPvrhjt8xkCBAju3QGNbpvn
+wV0XA0lUQwsoQBtcJp8u4NESASnNoRc3snS4ZycX+pJgKX2vX85Eac5OyXkTDfo1fk/WdQT3V/Qs
+JO4eaJbQ4zZzq116/G0SbYL5KO3CcKlKQpeqkGecsqdnSa2Vn/dqHWsYSgBCKqrgeI4SOE8cUrhy
+PS7B7zyFeu5trOCzOBYf7hd0RZrOUfHy5XtVJQfQ4vWLpjwb19aPLicy02Z7EI3KvcNcF/yxfhha
+aAGouMJYnjSQCxrNuxdTptGSYK3Dr1+tqDSNv05h7Jc3C0Ovil9DAmTOPFeMMOwONJJXEfguCm4Q
+SB1naBAPgecv2wD6SHvy90m8SJkleKvU1X0dRdhrugZ9D/EPb0L5ARz+BxgyebbgbT2MEOlBF0yi
+eL9DsFqwaMWmrpUI0u6u3VUmU21dRPpUZrZbL1hypDqfld+SO9sIllmU7rAMh1FzurOoEcXYneEt
+5IzWHvSdGAgtM9ltOeKb7SJwG33Dw3x6dJ03Fc5UlNLjsm951VwT7t6kl2PnDprlRCGu3LTGNo5o
+7hCGwpfNS+xHKs3UyCuoMmwggpi+0uTfKflzGBwE1FgtaZwIb0XWhqgmwEPB+HOdEYlXmFE9CUZh
+3TNGn6+YKtBPiVuw1K62unBEH1xpQyPH0AhmGJA5mSwLHNLJhBy+bDrmEVvAzVgIbGISuH7MH3EA
+AcJweAjtJ3bQKHjzWmGnkh5/gxxU0VeULUZiRf5YS9DGjbrBhJ3eNLGuhL+I7cgRNQsY5g+P+3ap
+5hA5bkgS4UCxvS8x+KYluUg5CHwb/pXMY73YY37ooATAF1f9dvc0Rk1H//pBFma5G3D8Nmlhmv/4
+Lpxu3JExSfGAe7lKQpWWO3HpjjoywIAOyPhV035vMdQGPrBCWzvb2gOmFAu0mZP52D3G6EOD8Gcc
+R/TFFuRqqEjo83pPYGODRiOgaxsBghWJFnM4gOZsbpXZQLrST6yW5oqfu6gKngvHcJKFynqbAYTs
+olREvhPZ8wqJ1w9IptBJeWeXWYewskC2Wd/BcO/QV8VFIxbrBM54AugOAusHRWipszwjNYWUvJMH
+qKHjsUBXHDeTSy2OBLRyL59mE8bBORcfPM2XSDoQz+X67PIWknOud9yzHG46IQ7LG0YOMpxRpmni
+0RlV+/Zbio2OWgom4tBdy6ToJngG/njBPvyMgJrGaReCPmLi4rd/TjzZ5mRF4hwnqi8IBbjG7BMO
+G0KsX3Jk3vXMqgNgwt3mLQgT4ZfInWhpo2XCj6SGwDPCsfs1AUUeM5ebWx/Kon5nSVYfouXnaGzc
+XQO6616HF1Efb8R60XV5TD2QKg9vEDjBaohpFrwh8DlEyIkUMNI5PSIbuSdfMsPRoO3wkZAx006q
+Q+Zrvz2nVpDKQvT+SwVWd0A1/OMpaZdsANhvVKD1JJJMGtUl8zmWY5HqZC4E6zbdlxP6t6lBBMVF
+csJxakAE7Y2LmzNg4hWVudTpMHzAr6hcLR2lK+he8vAKJlaopOjMCXqHSYgduolVS1q1E/U5hFLc
+6DOkl2Jgv0a5aQxvN8WP2WEPmJ5pDRd53EDVM96dKm+NKwnR8LJfIi3xqjIc/Rnl1Evd0oq/ez9w
+pGStRif2RPU9NXWF/BiDZbK4gvHzJQlFE++ZIVqWwZnEUu+p3onfFfvuUE8WrTO2hTiu05lC2sgA
+IBY0Y9FT4KmiSBbE3IqRWdotiKv0IuaiA9yz7Mp6Ud10QjhxZH4xZHrvdNWstxu7BjqDEkp3aAvs
+/8ToD1TgoNLwQ9xgNQ3Np2fmHQpUy+G8nBhZ0CYkBi1M+x2T2Atq94e/2pkDIfZ/ZrFzoll87x5E
+/uRwFomIWhCMak57FJofwj/4Jmllgk4feNhXeBLm9bVfIe+zyW9sIgiiDEzWOc4jwT6UpLHkYD6z
+4HM9AGY/AiPcxeleK9PK1U0xizIMlCfuwZv7Y5axi1xkUMyUgrux91i6X08k8zITINAjVOippc7A
+Yn1ZvKct0aq+VowRQnEcrrGSXiQIOAVVzeGgdVj7NVQCGVNfHBQdQG27odz/uVtEy2bHPLD0pkdf
+KZYhXHmzd6PZ2N7IOlekSZmcU+B9o3MELdqfWGsLdMbwZWhdWdIOoAxDjffEOr/Oqji2jHE5tBWE
+kw4Bsa8NURAxPyxBBSQa9auDiAxfpHrFODzSmRBInNCBaKmiE1DQGAf+IFu83it9P+keyGSIT+9g
+JxtODucrWHkmKs+AWi8Ocdn/VvtVciXbQjxXIgeYbrx14BFJKEcKrFjUg7oIOMyRshZj5lTyXDP3
+MKifUIVgXqqLF3LMTRL9FThN7OTsQDUFVUrUBbawHayDgagZJAKq4L+FoeJeThjQd1a3ZkUZq5Eu
++QyorQrGnhRrBxk5BOmSNwhyO9GhNd5m8rY9R+v7Pvo1GMTpP3qGcDwhvsaMJ+Rh2BpELNF2s9yp
+UfwW0k5h3moNJWQjsacdnqt0gYMYNoEKaNSAz1j75e3SopEIm4nfvZwcUj3jq/XVozy+b4eXWJKZ
+ouNyPSNzl+cy1UzigqbpMeR3FcjICuZZg+T2XcRg0uYnlcTJ443aGsH9ywzMJn3dbXY1G/i782Bs
+KG27hQtO42GBkiepvl9UCC0bb5ZurDOFvzfZVHCmV6SXmxVsJ8wssBWXp8MFSdlC1r9udBg3Rr56
+GrZ4FFT7nOOtPYXh6X4kV5QQt9zeYzwQtCd7cxRfTdzrHux0rhfkMKWY57mvu4HS5p7ATYe17zDA
+7S4xEa8MEuVBy9zGFE0pQfbQejsoY4LlX5rqvtlMVuESOAgBja6Rg93BwUjpwaD7+XS9ullwDtMX
+ol1rYMz9Q8DfdPdqUgyRchiEqxQ0sJM6X5dYxXX1bmjN7VA7yz2EwcqXeVNyO/YLe+mCdrufL1Pf
+Yx0Te1FqufN29d1nesbqfzxHfx8P7DCjjK0TkPIRxJgUZsPyEiGcsFYHcBy+NkVJYN07DpmzKBbG
++MKrKRTdY426moMMUl3FAdKEAr+Asbqelop2GZ3CEI0XMLWnEH7spbEk7vhGFD0IvSPJoE032Y+Z
+YSkIL5F+crWCZmnbe16weDX3169t2oJ5CthUxln1dKSilCeJhfAPxq7RMVBjN/SmQhSDnAqpt8EK
+DangOeVg74ydEtFy2TislsP8Nx7O1fEKYIRiHoV1oxGrzGBHfQhVzxLugBuUPxuuuDuHaTRSu2Mz
+K1tRLzmnp5OuhjAUYHjPEeMiMsWg/Kfxw4kB1ltLHAxWiq8pylCt2ippV9bxsyOASFqMATvUs4YS
+UZevJAC9/nC4xQD4WjfXAkpaYlZyVY9c4JxgXnrIIqRFLOFHZ5l+GSG+6/6octrxbdKedd0yxefY
+Qa8GvuSBBVb1wvAQDSUfE/tWlLFu5UamJShOy6CfO2flhE8spRJjoqxMJewU/0aVMrumrVaLpcFk
+PgLdKklEtdgOddUOlvJNM1M7Q7s78eyJVewtqx2JZYSJtNT5jACf4XZeq6DS6Jef8tkF/YOVxRVn
+yDgkeySc44dBXHzIPsAWUq6bPJpYTewYX8VIeRxdtS6JN6lfWK1VR3VVqcbHOdRdEHiIscIk71hn
+I5I6Yg0aRJRyDPvr5gcFSivpQFGhVkY6U04MUxiLKX1z0orWyFY/ggxtdBYWdOOC3U6I8P0Qw49A
+rGGYLNUxViReZQa8J0niuJD8rXVPHzfJykNPozTtDC5qLT1sxw0o1QvATfFpitFf8B0lZCe6kmBR
+R6kaN0Ld3sL9ZQwd15qQUrL2E23FJ0jr1bpoMrOmBDU7BgCo6W7r2J9nEtLHQlJg1Xlx8wGZLJtm
+SDiSQRMT/X4/z/7XooioysgReluWNdcsDWaO4enJDbIjWf8rq/eOmLGwom9BiYPHXQjWsFRza1e2
+k09RwnukUr4aEBfU2fRfTKo6YK1X3rCs1Q0TyBFn2ejlViBCq1Wx+G3N4VxuzTqfG7wNuLh6wj8H
+rCEbGNPvmX/FsyX0uLHbeWasoSF4/tlUfLH463XmuisGWHad9onlp13M+0vtmADy229XKbZJF9wn
+/DSSckNQiZf4V2+oXkuw6G+zLiEf+EpPdvvJDl+pgPuluDKPMTmJ5z+5gyPvxYy90CfQAoQI341/
+78IUe4v1fXxL2ZQ5mFMJD34OBjsh7AUkhyfBHs/y5QlhI84KGe+Q+hoQSgDQa7Ic8DscmRfM+dUR
+Gr92r3fnTE/zihjIXCkP3pYENJJ+4gEZ//PSQTy2QZwBKG9UOOUPR9DyQaZKGRm2OLsvoWxrrshi
+E6ztncTpDK2duUt1NrfuVVMrP9CwFjQgZcXeL41WeYLUQHJquIlE3nGlOl82qvFmbrJjIlln5oBS
+PejUpRsyONqG7izSlQlQ0daa0VTX799FFi0XbaZEsYMuSlaHa/RTr9pN6kVB7kzKd8XPppfsSPtf
+7OBLrf87pOUBk4ctl/2Gbw4BhHvTYGuRRLJKlPVp5LDoPQEEsfKeBZiJx3tjtIt7Ox1DnY3MY5uV
+wPFgqDAhb5CWTpWt/P9bUHWWvzpmD524hF3nQAR1j5Tj9MxQZPk1wUYGhgu0ymIJote+rErBxIq3
+m4S/hYc4EIaGVFOHlUOdqGIMs1V2KFPL3Cffs0Bs55NyX16LVlfTRLQcZQEQpZcAkunNktIFZ61P
+YDlnaCLTmqu4NEyRc5Pqt9+xh12YLoHJPtFqV9USUSNTiYgxC/b1dfVPlV2QvRIGo2054tmCYzY8
+jDN9Fn3OiFUaEvN9ZeVCneGTyWe/s9S5gDQLddxQ/s/UxLfZTkWKW4lwy6jYA2VyvJRuLeTbiNYQ
+XuuSijpE8NoRiWB3AnoQk6x5LhZxbSMBSL02RAFBh31Adv42/c6cM0fxW1yaAuFm1goZoMj7TN0D
+UCLIOSp2OnL1Mx/1J8hpvQMhYMF3orgKYCKDdhzBbH41OjGP1LHo8gKduqmi0gVdD3i3NavcHMOT
+FQb9vU6eZJgdJXRISfhodlRj4cSffpz/IRiD3UGqip+y35Cr0soP/jtprarxsPKLJ9CiVxAtSZP+
+YT4pUGZUrMIDQe4jEoQ3KUpgRLQOZBto1dtLMnMCRNenrEL16R/Y2NL4I6/wRVBWPqiB9woWZXXD
+onJ4HrGIgNkIDxBTFEW2lC45OfK8y4ExhbWTQZbVhAH/YzUGEjv/JTg9vkId7bjuvPQbA3hssH0s
+nhbP+PF06cixx3bYYDz0TcuaFjpApP+ix1TxEqnv24bD+5vhfPVvhCha0v7sQZKoCUONksjbZxVk
+Ewlix7/fZJH+le0Eli0wq1xN0SnE5LmuEdvABC3OGot6tqED2jaOWpjnDmv8u6S6zNA2lhFmJXEy
+qgkztQ7Var4Y5Oa3rkzTbO0XGyoWSvWxP8m7GEH26gmQftym+OI+YATq6Yw4L0WXzqttrtCLX68E
+oaOSX1gFzuupvuh6Zf+5ZLs9JK3isoAVepnPSQ11jdUx7mNMRhN3Pk5M7P+xvYZ9dd7zHh9EEtiN
+hLUSVLv1VQAAbPRSty/ZJsViv0BoGqSBywrl7Tvf8Qv5PBOrtmcOy+o509rwzPRcYUWoq3dGUJKK
+jT22MXxiyZWDE8fUlp/VVCLi9FPwl2Zk1N8IbTPNYptsRxdnFAGlWhnTUcyo29EPg9ki6IqaK0yc
+AQ1/jt8LSMHCw75S4wMWNr0sCO7XYD3JADJygjo5a/4FMRw7EGT6J8iwCsctzO2ubzQqHUn3qRhA
+Ly+NgJ29DH8VMuwkQO1AcdDi8eHjk2uXN/ahAv+WV1mvrj6+pj36hvBihROF308dDmHmaKaff3n4
+BM8l5CY3TpBJD9wIFSeiqFq19UW6uMJo6Gcu4FDWn/d/6v/HQb3/r9rXyrEV8CfCp+2J3pgoJ09M
+P/mt7CdXF9+UpgnXojKEpbt3OzMgTVsjuzvFPEGYXBPE28fitgOxiqtLSd8d7dVoVCtlQ5W3RQ2K
+Gcp2HBqgY6voUoRZEH+lJEm08CaxAt5fUQHIfDVej6pe/6GdMqsAhEWHVmLldiGyJsFmpAivxS8t
+Knh7xA25hLhVDQ5+0jQlmCc5yXdBCtIO5uabIXrjIKfxJ81KRJyToYWzTHGmQ5lr/YbgWI33pZD7
++TDDgc2sqxzt6tUw8hMFAAt7ChhS2vy8bHKngN1NV5uRTopJjZnp4ihZsjyCYs0UykV7bNouAniZ
+SyoCoyiYpfQEZC0JP3YHhjUPKAM7WtFMVkb6wP0LmeDuPXeFPCOq0NzSyLz1xtK3zP49SVoquykE
+QqsCp94pHubm9a+GUm/liMq/HWE7KqcmOq0FFjNlX2aKoNOsxtjtlaIaMo78HOZeERzlK0giz7fJ
+L9jSqcbGyYQCvnNPTseVaUkS2xYATMaRnphUR8/CWICIIckmbdjKs7yBbrsj0T4od+jcI12phinA
+Uhwi17VDHS5UJ0FdXad5xAFQ54m2zZlIMIf9DYzABHr51mYBQxo5PIuFuHIM/qei6JFJ0IddFHFE
+UdU8sbMnA+1DZCI2gcmjXT8WST0NQFG6nX+5pvZNMkV4f6jHjJWQtR8eek0RcbhOw43XSws1ijT+
+jdjHpqXj6/bmwK4U+LcV9m0ADdq7sigrfNgTR0oy1eosehu2a1/rUbePBdZRKFaSKwOGzEL5S/0u
+be7OiG04Dweb3jmhSjwS7RKXgkDUTJExOR7E8oxfWqP7yZLFDE5fgy8CPQj/q26e26jnh45jAMd/
+k1rKtaNY4M0uMinkNblEhkkXgJ+Bm9vycZNtp43bNS/NreHBYFxbltg4vSYHK6/i5s7E6W9itQwG
+4aW6p6aiWhsyYUj5spbztj1FoqLzuoMdfHa8lLdwGlrKoqnFL+qlE9eWyhkERAoEDS4JBqFTWfKE
+VyATagL4fiRl5hP8L8D2IDcGO/NlMOtSW2TkbjXkPi/6clq3D6kmY7gTDMnfZjI/QVSsqXa7mYpF
+3VNVwxRkNlJAO5vJMfXX/5S0YMeLE86dkw0yJYKeg/Q0BJMKQUVbWsmnO0487UkVouEvG0CRUGcR
+JCVwn4RHCIvER4e2q/L3swdq9LM4nN4fqwTwPYHl+kYs0+rbmON7IGfaH98jkGsn3Jbbr5wLS1XV
+GX9UKAr0lcE4vWU68lXVngeJrMQtNSpf7e6eVwOrFiE6xjD/VZnucQ6oBIkY3l9QnEzogOMT4jHz
+S2Uvtk5PMmX1wQ/hS1vbV24TK/BE6d70zMwLXEHGo1xY11anBA99HpObxa6JjtTFW9xwH8Qyg6OK
+cY7OZGV4YaYiIRcsgEK3J1yhmqEzxYfmAdZxUHrbF6dYwjwKWANw3nRKUds8BUH4LVGfbolY3gmM
+CnZXOg5h98btcxvRH/y5HSePB0vCPS7gp8H6rezf9O/xHOYXcZKk6K9DtEnGIt5a2lxqfeKb/Ujr
+K4KdneDnrAmx67lNO+Pq5oHMG10SnRqhWhfg5e7txFotVZsJvzfRcX9fapVGQ34Ado9G5QTFXskO
+VEW19dVq6z55zyXF0ucFOtmWPJwn9eso/oWvuZyatJkBe0s+pphMgIIpGoGHXgeR3Ci3i6upxavf
+4ycK/zUMexN7x6U7aEcAo35HZSLppqEFrcJ9hKbqnAAnC2fEVFFfiZCJkewjsaE1MFctpLNV9qFv
+uxelm1Q7Kd5uwkypGiYRLbeKSKW/zzMm/Bv7B+Clc9/NoN5c3iSPbx+v1AiJUkggsVxX7LZQC/1X
+w68TjOoJmGxav4XMweBx5yln29NMfPKiV0EUBbY5Too79RVre3EKR1TxlCAVw3q0h4z9uP5OO0cA
+FiXknGlrd7DKw8KzQWsIb2bjpcOf7tdNFjX0XaU1Ko9TNUwLyWYICAF8JrSxS/cJZFlxBAxF4ipL
+gmd+nBjm7FZKviMMl0mjt6ErqjlhPiNWAQ9VNkEf6ZpMaG2ckOJTL2MnK7SvLuUGlK1g0rjLERHV
+chtDAMlEt/vqwmbLBJQhbEC6OYOGZxQ3qBlvdIDoDRZ58wBtsDJNHKGZ41oLSHhV6hOQsLAAJGl4
+j06+6tc7XvL2xyBQDgbClbCi/puQ0f7VWXigb4K34I4+JV8Hex8nPPpJu4Fs1t+qqw4sTIFbGfcR
+nqAHm6hHoyZx1+nekXHtC+3r8ZiksxM7IrMvWgr09SUPXpnPnWss3nalTA0BSM68HDnBjWeFd5CF
+VsyB1/fILUhYq8QuD7FQKHAC7lNC37jzE9OCaT0QujQRwA8CdRlCxjp2RqNKWq9OfJ+Sf7Ek678p
+Fv4dAsl3SpJYFTFjDg+3W77RNOWFiQEWHQq8PQoI+MoNJN08YGozeKhPLj0Jxm6/HxFSoYp02Zia
+97NPzwi5Iro5pCN1cDoomHZqn/9eZvjJ624QNuIB1IRLDSoWSiFpMboNNZop0hV4ASHZpy8xCX4E
+RWqw0fn8r8hpUWFioQ4iDFzwYU0eFw2MrLpLZfcKVzbg6JW1dadJMPjHqZgCbXCajABcTO9jdubs
+EZVyL4Nlf4J3g/9Aqu397aEc/X4v6mWIbUkh6t9WFWTPkUqVzrlJSWjBD9yw/spQUhDuabJppXyl
+WumThmFJp6R/fJMKks/avQ0Od19EVqHpASVakSRi7ZhSh9pZW6W7YTcXRrl6dxAWvunCe41iLD1I
+OGMm4H3JVzA2gi9VY8jdWkkYhcaZLPHWZwueo+1BMEkYbUI57Hn06fWky+hn9uJKvi7zJUKxKUpm
+qSIBAbcNIEkQoIsuBJxfB0iSZSrBx7avWw71MOd0EEjcQKtLPMjIPh9NFGkK4jHBV7rI3a9GRt3A
+4Mll2TMxusj09idDRKY0jFQCLvYm82gT6nJMk3ao5E1TNDCOGRUDJRmLeCMhoc6GkSdMO5zJIjw5
+SyRuVRKMHPHE6+VZzS74GsLcBbiwyB4Urdk/HdNh+wRJTR0f1upxWKFHDpBvLhgQDu/D18O5xPit
+XLCTNq9191Do/rr3tsYkWpTt1J4r4sFiPHDS0Az1txQaQ96hFnsoXn07LJNPETkqYYAd3qw0oxOF
+3rOveFVvxv6YG1yKdupBNhhEBk6Jc6jZqfMSIgShmlAWIffbWDPnkOpDKN9agloREDrWEG5cFhhY
+e7eZRWvQNGNc7VgP8OEfWjePOxWmOTetfgrsDnD05765uILrIos8LcsIp6PCX5lkWP45z6jMmDpy
+BEMSAwv6YzJYtV5tq7zcyrz6JNuKjk0kfmXo7zD41tvSntuC5gTvqWgPvyj5toZNqyKrpUYPeKi2
+vuSM22jZ+NbxAv+5PYwPHNXdcRZoPX3KdRt4Tb4xz1UdxrHPrSJIiQaTkfnPXgbn5i/2xk7hOu7S
+C+Ea/sKwuRC8+dwCwPQdAVkowctqmiMfxKSTleKs7uuTMrHLpW7FuqSJQhzX4t0z2kdeiVUHEFBJ
+v/z/Y8HXDs21JoAkv2uipmE6K+nkKO5qd3s7JLV3np6UKamWF3dtl9YsJc9CinuP2VmAf/qOPpdc
+Khz03yr7ZKST5ZEKWOYGa5NzZWUK6ADi2OP6h3AGEzW9uCqR5CGi4n4RIfPaLgq+UOgtpyr+LzEK
+WCOysmsGo29IzADHowYJNDKnIX6Lsu1Z4TbE0EJerJ87A5j5Gl0ZTfNZceH04eOylcBSMuxNlMQM
++bx7xtMlRq9kw7tf2a9uRmxSVdoPHyHHRlCLRdUtruOfA9MnDZvsBFlex7UUBVq39mKoNgCOIjhn
+9dWGLHFmm39Mb96vv++o5+AwQyF78fhRcgmLz0N8iLdFRN5Y8085CtViJgxCxcVzoLU=
+-----END CASPER ENCRYPTED FILE-----

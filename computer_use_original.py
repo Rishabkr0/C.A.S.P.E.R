@@ -1,613 +1,430 @@
-import logging
-import pyautogui
-import time
-import os
-import subprocess
-import webbrowser
-from uia_control import uia_loop, UIANotSupportedError
-
-def normalize_app_name(target: str) -> tuple[str, list[str]]:
-    """
-    Normalizes app name and returns primary search term + list of search term variants to try.
-    Handles hyphenation variations (e.g. anti-gravity -> antigravity), common STT phrasing.
-    """
-    target_clean = target.strip().lower()
-    for verb in ["open ", "launch ", "start ", "run "]:
-        if target_clean.startswith(verb):
-            target_clean = target_clean[len(verb):].strip()
-
-    target_clean = target_clean.replace("for me", "").strip()
-
-    aliases = {
-        "anti-gravity": "antigravity",
-        "anti gravity": "antigravity",
-        "visual code": "visual studio code",
-        "visuals code": "visual studio code",
-        "vs code": "vscode",
-        "chrome browser": "chrome",
-        "ms edge": "edge",
-        "microsoft edge": "edge",
-    }
-    for k, v in aliases.items():
-        if target_clean == k:
-            target_clean = v
-            break
-
-    primary_search = target_clean.replace("anti-gravity", "antigravity").replace("anti gravity", "antigravity")
-    variants = [primary_search]
-
-    if "-" in target_clean:
-        no_hyphen = target_clean.replace("-", "")
-        if no_hyphen not in variants:
-            variants.append(no_hyphen)
-        space_hyphen = target_clean.replace("-", " ")
-        if space_hyphen not in variants:
-            variants.append(space_hyphen)
-
-    if "antigravity" in target_clean:
-        if "antigravity" not in variants:
-            variants.insert(0, "antigravity")
-        if "anti gravity" not in variants:
-            variants.append("anti gravity")
-
-    return primary_search, variants
-
-
-def get_running_app_names_and_titles() -> set[str]:
-    """Get set of lowercase names of running processes and open window titles."""
-    names = set()
-    try:
-        import psutil
-        for p in psutil.process_iter(['name']):
-            try:
-                pname = p.info['name']
-                if pname:
-                    names.add(pname.lower())
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    try:
-        import win32gui
-        def enum_win(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd).strip()
-                if title:
-                    names.add(title.lower())
-        win32gui.EnumWindows(enum_win, None)
-    except Exception:
-        pass
-
-    try:
-        from pywinauto import Desktop
-        for w in Desktop(backend="uia").windows():
-            try:
-                t = w.window_text().strip()
-                if t:
-                    names.add(t.lower())
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    return names
-
-
-def is_target_matched(target_keywords: list[str], current_names_and_titles: set[str]) -> bool:
-    """Check if any running process or window title matches target keywords."""
-    for item in current_names_and_titles:
-        for kw in target_keywords:
-            if len(kw) >= 3 and kw in item:
-                return True
-    return False
-
-
-def launch_app(target: str) -> str:
-    """
-    Launches an app via Windows Search with normalization, fallback search terms,
-    and empirical verification that the app process/window actually opened.
-    Opens apps maximized.
-    """
-    import pyautogui
-    import time
-
-    primary_search, search_variants = normalize_app_name(target)
-
-    keywords = [primary_search]
-    if "antigravity" in primary_search or "anti-gravity" in primary_search or "anti gravity" in primary_search:
-        keywords.extend(["antigravity", "anti-gravity", "anti gravity"])
-    elif "code" in primary_search or "vscode" in primary_search:
-        keywords.extend(["code", "vscode", "visual studio code"])
-    elif "chrome" in primary_search:
-        keywords.extend(["chrome"])
-    elif "edge" in primary_search:
-        keywords.extend(["msedge", "edge"])
-
-    before_state = get_running_app_names_and_titles()
-
-    # Pre-check: if already running / open, just focus it then maximize
-    if is_target_matched(keywords, before_state):
-        logging.info(f"App '{target}' already running. Bringing to focus.")
-        pyautogui.hotkey("win")
-        time.sleep(0.3)
-        pyautogui.write(primary_search, interval=0.04)
-        time.sleep(0.4)
-        pyautogui.press("enter")
-        time.sleep(1.0)
-        pyautogui.hotkey("win", "up")  # Maximize
-        return f"Successfully focused {target}."
-
-    # Attempt launch using search variants
-    for search_term in search_variants:
-        logging.info(f"Attempting to launch app '{target}' using search term: '{search_term}'")
-        pyautogui.hotkey("win")
-        time.sleep(0.4)
-        pyautogui.write(search_term, interval=0.04)
-        time.sleep(0.5)
-        pyautogui.press("enter")
-
-        # Poll for up to 3 seconds for new or matching process/window
-        for _ in range(10):
-            time.sleep(0.3)
-            current_state = get_running_app_names_and_titles()
-            new_items = current_state - before_state
-            if is_target_matched(keywords, new_items) or is_target_matched(keywords, current_state):
-                logging.info(f"Successfully verified app launch for '{target}' using search term '{search_term}'")
-                time.sleep(0.5)          # Let the window fully render
-                pyautogui.hotkey("win", "up")  # Maximize
-                return f"Successfully opened {target}."
-
-    logging.warning(f"Failed to verify launch for '{target}' after trying search terms: {search_variants}")
-    return f"Failed to open '{target}'. No matching application was found on the system."
-
-
-
-def skip_youtube_ad() -> str:
-    """
-    Searches for YouTube 'Skip Ad' buttons using UIA across active browser windows,
-    falling back to browser focus and YouTube keyboard shortcuts if needed.
-    """
-    import pyautogui
-    import time
-
-    logging.info("Fast-path: Skipping YouTube Ad")
-
-    # 1. Search UIA tree in open windows for 'Skip Ad' button
-    try:
-        from pywinauto import Desktop
-        desktop = Desktop(backend="uia")
-        for w in desktop.windows():
-            try:
-                title = w.window_text().strip().lower()
-                if any(b in title for b in ["youtube", "chrome", "edge", "firefox", "brave", "opera"]):
-                    w.set_focus()
-                    time.sleep(0.2)
-                    for ctrl in w.descendants():
-                        try:
-                            ctrl_name = ctrl.window_text().strip().lower()
-                            if any(k in ctrl_name for k in ["skip ad", "skip ads", "skip advert", "skip video"]) or ctrl_name == "skip":
-                                if ctrl.is_visible() and ctrl.is_enabled():
-                                    logging.info(f"Found Skip Ad button via UIA: '{ctrl.window_text()}'")
-                                    ctrl.click_input()
-                                    return "Successfully clicked Skip Ad button on YouTube."
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-    except Exception as e:
-        logging.warning(f"UIA Skip Ad search error: {e}")
-
-    # 2. Fallback: Focus browser window and send YouTube keyboard shortcuts
-    try:
-        import win32gui
-        def enum_win(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd).strip().lower()
-                if any(b in title for b in ["youtube", "chrome", "edge", "firefox", "brave"]):
-                    win32gui.SetForegroundWindow(hwnd)
-        win32gui.EnumWindows(enum_win, None)
-    except Exception:
-        pass
-
-    time.sleep(0.3)
-    # In YouTube web player, Tab then Enter / Space triggers Skip Ad if skippable
-    pyautogui.press('tab')
-    time.sleep(0.2)
-    pyautogui.press('enter')
-    time.sleep(0.2)
-    pyautogui.press('space')
-
-    return "Attempted to skip YouTube ad."
-
-
-def _spotify_find_window():
-    """
-    Returns the hwnd of the visible Spotify window, or None.
-    Works even when the title shows the currently-playing song (no 'Spotify' in title).
-    """
-    import win32gui, win32process
-    found = [None]
-    def _cb(hwnd, _):
-        if found[0] or not win32gui.IsWindowVisible(hwnd):
-            return
-        title = win32gui.GetWindowText(hwnd).lower()
-        if "spotify" in title:
-            found[0] = hwnd
-            return
-        try:
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            import psutil
-            if "spotify" in psutil.Process(pid).name().lower():
-                found[0] = hwnd
-        except Exception:
-            pass
-    win32gui.EnumWindows(_cb, None)
-    return found[0]
-
-
-def _spotify_pixel_scan_play(win_rect) -> tuple | None:
-    """
-    Scans the Spotify MAIN CONTENT AREA for Spotify-green (#1DB954) pixels.
-    Excludes sidebar, right panel, top nav, and bottom player bar.
-    Returns (cx, cy) screen coordinates of the button centroid, or None.
-    """
-    try:
-        import numpy as np
-        from PIL import ImageGrab
-        wx_, wy_, wr_, wb_ = win_rect
-        win_h = wb_ - wy_
-        win_w = wr_ - wx_
-        scan_x1 = wx_ + 232
-        scan_x2 = wr_ - 280 if win_w > 700 else wr_
-        scan_y1 = wy_ + 120
-        scan_y2 = wy_ + int(win_h * 0.75)
-        img = ImageGrab.grab(bbox=(scan_x1, scan_y1, scan_x2, scan_y2))
-        arr = np.array(img)
-        mask = (
-            (arr[:, :, 0] >= 9)  & (arr[:, :, 0] <= 49)  &
-            (arr[:, :, 1] >= 160) & (arr[:, :, 1] <= 210) &
-            (arr[:, :, 2] >= 64)  & (arr[:, :, 2] <= 104)
-        )
-        ys, xs = np.where(mask)
-        if len(xs) < 30:
-            return None
-        cx_ = int(xs.mean()) + scan_x1
-        cy_ = int(ys.mean()) + scan_y1
-        logging.info(f"Spotify pixel scan: found {len(xs)} green px, centroid=({cx_},{cy_})")
-        return cx_, cy_
-    except Exception as e:
-        logging.warning(f"Pixel scan error: {e}")
-        return None
-
-
-async def play_spotify_playlist(task_lower: str) -> str:
-    """
-    Plays a Spotify playlist by name.
-    Tries the user's saved playlists first (via spotipy OAuth cache),
-    then falls back to public playlist search (client credentials).
-    After navigating to the playlist page, uses pixel scan to click Play.
-    """
-    import re
-
-    # --- Extract playlist name ---
-    playlist_name = None
-    patterns = [
-        r"(?:shuffle|play)\s+(?:my\s+)?(.+?)\s+playlist",
-        r"playlist\s+(?:called\s+|named\s+)?(.+?)(?:\s+on\s+spotify)?$",
-        r"from\s+(?:my\s+)?(.+?)\s+playlist",
-    ]
-    for p in patterns:
-        m = re.search(p, task_lower)
-        if m:
-            playlist_name = m.group(1).strip()
-            break
-
-    if not playlist_name:
-        logging.warning("Could not extract playlist name, falling back to song search")
-        return await play_spotify(task_lower)
-
-    logging.info(f"play_spotify_playlist: searching for '{playlist_name}'")
-
-    # --- Find playlist URI via spotipy ---
-    playlist_uri = None
-    try:
-        import spotipy
-        from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
-
-        # 1. Try user's saved playlists (uses cached OAuth token if available)
-        try:
-            sp_user = spotipy.Spotify(auth_manager=SpotifyOAuth(
-                client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-                client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-                redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-                scope="playlist-read-private playlist-read-collaborative",
-                cache_path=".cache",
-                open_browser=False,
-            ))
-            results = sp_user.current_user_playlists(limit=50)
-            for pl in (results.get("items") or []):
-                if pl and playlist_name.lower() in pl["name"].lower():
-                    playlist_uri = pl["uri"]
-                    logging.info(f"Found in user playlists: {pl['name']}")
-                    break
-        except Exception as e:
-            logging.warning(f"User playlist lookup failed ({e}), trying public search")
-
-        # 2. Fallback: search public playlists (no user auth needed)
-        if not playlist_uri:
-            sp_cc = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-                client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-                client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-            ))
-            res = sp_cc.search(q=playlist_name, type="playlist", limit=3)
-            items = (res.get("playlists") or {}).get("items") or []
-            if items:
-                playlist_uri = items[0]["uri"]
-                logging.info(f"Found public playlist: {items[0]['name']}")
-
-    except Exception as e:
-        logging.error(f"Spotipy playlist search error: {e}")
-
-    if not playlist_uri:
-        logging.warning(f"Playlist '{playlist_name}' not found, falling back to song search")
-        return await play_spotify(task_lower)
-
-    # --- Open the playlist in Spotify ---
-    webbrowser.open(playlist_uri)
-    await asyncio.sleep(3.0)
-
-    # --- Find Spotify window ---
-    import win32gui
-    spotify_hwnd = _spotify_find_window()
-    if not spotify_hwnd:
-        return f"Could not find Spotify window for playlist '{playlist_name}'."
-
-    win32gui.SetForegroundWindow(spotify_hwnd)
-    await asyncio.sleep(0.3)
-    rect = win32gui.GetWindowRect(spotify_hwnd)
-    wx, wy, wr, wb = rect
-
-    # Hard-focus via title bar click
-    pyautogui.click(wx + (wr - wx) // 2, wy + 30)
-    await asyncio.sleep(0.4)
-
-    # On the playlist page the Play button is always visible (no hover needed).
-    # Hover near the expected area so the button renders, then pixel scan.
-    approx_x = wx + 280
-    approx_y = wy + 310
-    pyautogui.moveTo(approx_x, approx_y, duration=0.2)
-    await asyncio.sleep(0.8)
-
-    coords = await asyncio.to_thread(_spotify_pixel_scan_play, (wx, wy, wr, wb))
-    if coords:
-        cx, cy = coords
-        logging.info(f"Clicking playlist play button at ({cx},{cy})")
-        pyautogui.click(cx, cy)
-        return f"Playing playlist '{playlist_name}' on Spotify."
-    else:
-        logging.warning("Green button not found on playlist page, double-clicking approx position")
-        pyautogui.doubleClick(approx_x, approx_y)
-        return f"Playing playlist '{playlist_name}' on Spotify (fallback)."
-
-
-async def play_spotify(task_lower: str) -> str:
-    """
-    Hover-then-vision Spotify playback:
-    1. ytmusicapi (2.5s timeout) for precise Title+Artist.
-    2. Open spotify:search URI, hover at approximate card area to reveal play button.
-    3. ONE vision call to identify the exact green play button coordinates.
-    4. Click it.
-    """
-    import re
-    import asyncio
-    import io
-    import json
-
-    # --- Query extraction ---
-    match = re.search(r"'(.*?)'|\"(.*?)\"", task_lower)
-    if match:
-        query = match.group(1) if match.group(1) else match.group(2)
-    else:
-        stop_words = {"search", "and", "play", "thing", "something", "song", "music",
-                      "track", "on", "in", "spotify", "listen", "to", "for", "open",
-                      "a", "the", "pause", "current", "instead", "it", "me"}
-        filtered = [w for w in task_lower.split() if w not in stop_words]
-        query = re.sub(r"[^\w\s]", "", " ".join(filtered)).strip()
-    query = query or "top hits"
-
-    logging.info(f"Spotify play_spotify: query='{query}'")
-
-    # 1. ytmusicapi with timeout for precise Title + Artist
-    precise_query = query
-    try:
-        def _yt_lookup():
-            from ytmusicapi import YTMusic
-            yt = YTMusic()
-            results = yt.search(query, filter="songs", limit=1)
-            if results:
-                song = results[0]
-                title = song.get("title", "")
-                artists = song.get("artists", [])
-                artist = artists[0].get("name", "") if artists else ""
-                if title and artist:
-                    return f"{title} {artist}"
-            return query
-        precise_query = await asyncio.wait_for(asyncio.to_thread(_yt_lookup), timeout=2.5)
-        logging.info(f"ytmusicapi: '{query}' → '{precise_query}'")
-    except Exception as e:
-        logging.warning(f"ytmusicapi skipped ({e})")
-
-    # 2. Open Spotify search
-    webbrowser.open(f"spotify:search:{precise_query}")
-    await asyncio.sleep(3.0)
-
-    # 3. Bring Spotify to foreground — hard focus via click on title bar
-    import win32gui
-    spotify_hwnd = _spotify_find_window()
-    if not spotify_hwnd:
-        logging.error("Spotify window not found after opening search URI")
-        return f"Could not find Spotify window to play '{precise_query}'."
-
-    win32gui.SetForegroundWindow(spotify_hwnd)
-    await asyncio.sleep(0.3)
-    rect = win32gui.GetWindowRect(spotify_hwnd)
-    wx, wy, wr, wb = rect
-
-    # Hard-click Spotify's top bar to truly steal focus from any other app
-    pyautogui.click(wx + (wr - wx) // 2, wy + 30)
-    await asyncio.sleep(0.4)
-
-    # 4. Hover at approximate Top Result card area to reveal the green play button
-    approx_card_x = wx + 231 + 74
-    approx_card_y = wy + 248 + 74
-    pyautogui.moveTo(approx_card_x, approx_card_y, duration=0.2)
-    await asyncio.sleep(1.2)
-
-    # 5. Pixel-scan for the green play button using shared helper
-    coords = await asyncio.to_thread(_spotify_pixel_scan_play, (wx, wy, wr, wb))
-    if coords:
-        cx, cy = coords
-        logging.info(f"Clicking Spotify green play button at ({cx},{cy})")
-        pyautogui.click(cx, cy)
-        return f"Playing '{precise_query}' on Spotify."
-    else:
-        logging.warning("Green play button not found — double-clicking card position")
-        pyautogui.doubleClick(approx_card_x, approx_card_y)
-        return f"Playing '{precise_query}' on Spotify (double-click fallback)."
-
-
-
-async def computer_use_loop(task: str, max_steps: int = 15) -> str:
-    """
-    Delegates to the text-based UIA control loop and Hybrid Vision Fallback.
-    Handles universal window shortcuts (close, minimize, maximize) and app controls.
-    """
-    task_lower = task.lower().strip()
-    
-    # Universal Window Controls (Close, Minimize, Maximize)
-    if "minimize" in task_lower:
-        logging.info("Universal action: Minimizing active window")
-        pyautogui.hotkey("win", "down")
-        return "Minimized active window."
-
-    if "maximize" in task_lower:
-        logging.info("Universal action: Maximizing active window")
-        pyautogui.hotkey("win", "up")
-        return "Maximized active window."
-
-    if task_lower.startswith("close ") or task_lower == "close window" or task_lower == "close app":
-        logging.info(f"Universal action: Closing window ({task})")
-        pyautogui.hotkey("alt", "f4")
-        return "Closed active window."
-
-    # Fast-path for media controls (Pause, Play, Next, Mute)
-    media_commands = {
-        "pause": "playpause",
-        "stop": "playpause",
-        "play": "playpause",
-        "resume": "playpause",
-        "next": "nexttrack",
-        "change": "nexttrack",
-        "skip": "nexttrack",
-        "previous": "prevtrack",
-        "back": "prevtrack",
-        "mute": "volumemute",
-        "unmute": "volumemute"
-    }
-    
-    # We strip common filler words to check if the core command is just a media action
-    core_task = task_lower.replace("the", "").replace("this", "").replace("video", "").replace("song", "").replace("music", "").replace("track", "").replace("playback", "").replace("currently", "").replace("playing", "").strip()
-    
-    if core_task in media_commands:
-        key = media_commands[core_task]
-        logging.info(f"Fast-path media control: {core_task} (mapped to {key})")
-        pyautogui.press(key)
-        return f"Executed media command: {core_task}"
-
-    # Fast-path for skipping YouTube Ads
-    if "skip" in task_lower and any(ad_kw in task_lower for ad_kw in ["ad", "ads", "advert"]):
-        return skip_youtube_ad()
-
-
-    # Fast-path for Spotify PLAYLIST requests (before generic song search)
-    if "spotify" in task_lower and "playlist" in task_lower and any(act in task_lower for act in ["play", "shuffle", "listen"]):
-        return await play_spotify_playlist(task_lower)
-
-    # Fast-path for playing/searching on Spotify
-    if "spotify" in task_lower and any(act in task_lower for act in ["play", "search", "listen"]):
-        return await play_spotify(task_lower)
-
-    # Fast-path for playing/searching on YouTube
-    if "youtube" in task_lower and ("play" in task_lower or "search" in task_lower):
-        import pywhatkit
-        query = task_lower.replace("play", "").replace("search", "").replace("on youtube", "").replace("in youtube", "").replace("for", "").strip()
-        if not query:
-            query = "latest music"
-            
-        logging.info(f"Fast-path YouTube playback for query: {query}")
-        try:
-            pywhatkit.playonyt(query)
-            return f"Successfully started playing '{query}' on YouTube."
-        except Exception as e:
-            return f"Failed to play on YouTube directly: {e}"
-
-    # Fast-path for opening folder in VS Code
-    if ("folder" in task_lower or "directory" in task_lower) and ("vs code" in task_lower or "vscode" in task_lower or "code" in task_lower):
-        logging.info(f"Fast-path opening folder in VS Code: {task}")
-        docs_path = os.path.expanduser("~/Documents")
-        desktop_path = os.path.expanduser("~/Desktop")
-        
-        words = task_lower.replace("open", "").replace("folder", "").replace("directory", "").replace("in vs code", "").replace("in vscode", "").replace("in documents", "").replace("in document", "").strip().split()
-        folder_name = words[-1] if words else ""
-        
-        target_path = None
-        if folder_name:
-            if os.path.exists(os.path.join(docs_path, folder_name)):
-                target_path = os.path.join(docs_path, folder_name)
-            elif os.path.exists(os.path.join(desktop_path, folder_name)):
-                target_path = os.path.join(desktop_path, folder_name)
-        
-        if target_path:
-            subprocess.Popen(f'code "{target_path}"', shell=True)
-            return f"Successfully opened folder '{folder_name}' in VS Code."
-        else:
-            pyautogui.hotkey('ctrl', 'k')
-            time.sleep(0.1)
-            pyautogui.hotkey('ctrl', 'o')
-            time.sleep(0.8)
-            if folder_name:
-                import pyperclip
-                pyperclip.copy(folder_name)
-                pyautogui.hotkey('ctrl', 'v')
-                time.sleep(0.3)
-                pyautogui.press('enter')
-            return f"Attempted to open folder '{folder_name}' in VS Code."
-
-    if any(task_lower.startswith(verb) for verb in ["open ", "launch ", "start "]) and len(task_lower.split()) <= 5:
-        verb, target = task_lower.split(" ", 1)
-        target = target.strip()
-        
-        if "youtube" in target:
-            webbrowser.open("https://www.youtube.com")
-            return "Opened YouTube in the default browser."
-        if "google" in target and "chrome" not in target:
-            webbrowser.open("https://www.google.com")
-            return "Opened Google in the default browser."
-            
-        logging.info(f"Fast-path opening app: {target}")
-        return launch_app(target)
-
-    try:
-        logging.info("Attempting task via UIA text tree")
-        res = await uia_loop(task, max_steps=max_steps)
-        if "Task failed" not in res:
-            return res
-        logging.info("UIA returned task failure, switching to Hybrid Vision Fallback...")
-    except Exception as e:
-        logging.warning(f"UIA loop failed ({e}), switching to Hybrid Vision Fallback...")
-
-    from vision_fallback import vision_fallback_step
-    logging.info("Executing Hybrid Vision Fallback (Single Scaled Screenshot)")
-    summary, _ = await vision_fallback_step(task, [])
-    return summary
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+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
+EA==
+-----END CASPER ENCRYPTED FILE-----

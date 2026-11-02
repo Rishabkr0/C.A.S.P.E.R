@@ -1,82 +1,75 @@
-import asyncio
-import json
-import functools
-from typing import Any, Dict, List
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-# Import from mcp libraries
-from mcp.types import Tool as MCPTool, CallToolResult
-from .server import MCPServer
-
-# A minimal FunctionTool class used by the agent.
-class FunctionTool:
-    def __init__(self, name: str, description: str, params_json_schema: Dict[str, Any], on_invoke_tool, strict_json_schema: bool = False):
-        self.name = name
-        self.description = description
-        self.params_json_schema = params_json_schema
-        self.on_invoke_tool = on_invoke_tool  # This should be an async function.
-        self.strict_json_schema = strict_json_schema
-
-    def __repr__(self):
-        return f"FunctionTool(name={self.name})"
-
-class MCPUtil:
-    @classmethod
-    async def get_function_tools(cls, server, convert_schemas_to_strict: bool) -> List[FunctionTool]:
-        tools = await server.list_tools()
-        function_tools = []
-        for tool in tools:
-            ft = cls.to_function_tool(tool, server, convert_schemas_to_strict)
-            function_tools.append(ft)
-        return function_tools
-
-    @classmethod
-    def to_function_tool(cls, tool, server, convert_schemas_to_strict: bool) -> FunctionTool:
-        # In a more complete implementation, you might convert the JSON schema into a strict version.
-        schema = tool.inputSchema
-
-        # Use a default argument to capture the current tool correctly in the closure
-        async def invoke_tool(context: Any, input_json: str, current_tool_name=tool.name) -> str:
-            try:
-                arguments = json.loads(input_json) if input_json else {}
-            except Exception as e:
-                # Return error message as string
-                return f"Error parsing input JSON for tool '{current_tool_name}': {e}"
-            try:
-                result = await server.call_tool(current_tool_name, arguments)
-                # Ensure the final return value is a string
-                if "content" in result and isinstance(result["content"], list) and len(result["content"]) >= 1:
-                     # Handle single or multiple content items - convert to string
-                     if len(result["content"]) == 1:
-                         content_item = result["content"][0]
-                         # Convert simple types explicitly to string
-                         if isinstance(content_item, (str, int, float, bool)):
-                             return str(content_item)
-                         # Convert complex types (like dict, list) to JSON string
-                         else:
-                             try:
-                                 return json.dumps(content_item)
-                             except TypeError:
-                                 return str(content_item) # Fallback to default string representation
-                     else:
-                         # Multiple content items, return as JSON array string
-                          try:
-                              return json.dumps(result["content"])
-                          except TypeError:
-                              return str(result["content"]) # Fallback
-                else:
-                    # If 'content' is missing, not a list, or empty, return string representation of the whole result
-                    try:
-                        return json.dumps(result)
-                    except TypeError:
-                        return str(result) # Fallback
-            except Exception as e:
-                 # Catch errors during tool call itself
-                 return f"Error calling tool '{current_tool_name}': {e}"
-
-        return FunctionTool(
-            name=tool.name,
-            description=tool.description,
-            params_json_schema=schema,
-            on_invoke_tool=invoke_tool,
-            strict_json_schema=convert_schemas_to_strict,
-        )
+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
+ZjQ3ngJg9IYAvK6NbvPvvA==
+-----END CASPER ENCRYPTED FILE-----

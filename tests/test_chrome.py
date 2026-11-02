@@ -1,16 +1,18 @@
-import subprocess, time, requests
-proc = subprocess.Popen(['C:/Program Files/Google/Chrome/Application/chrome.exe', '--remote-debugging-port=9222', r'--user-data-dir=C:\Users\Rishab\AppData\Local\Google\Chrome\User Data', '--profile-directory=Profile 1', '--hide-crash-restore-bubble'])
-end = time.time() + 10
-opened=False
-while time.time() < end:
-  try:
-    res=requests.get('http://127.0.0.1:9222/json/version', timeout=1)
-    if res.status_code==200:
-      opened=True
-      print('PORT OPENED')
-      break
-  except Exception as e:
-    pass
-  time.sleep(2)
-print('Did it open?', opened)
-proc.kill()
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
+
+XLl+GmQNVsmuK4TVvdA5k8JYXFOLUhM/4qJS+eQoH5GQYbxfrJRuwCXAs7I/b3CPETTOOnvERd78
+Bzs9zetqwRhDykhxW4OSelrj3aJDAGJaqvlcaH+FaB6He+kLAF6HhmOod0pahouEz28CPC326jIj
+v+QK9YB9dfPk+JJ1PWBMr+8WRTp6aQUZ9uqIIG9AInLgeeIP4VacqcAEQKFprRJpmNeUlc3ScVeO
+5xLv3jh1z+RoPxCi/WtfE/EEZDJRpxZFOTRzYuAvYv/9k5bLylWIlkgHoKVb+B2GW1c+3YF69jwP
+n+gtgwFfPoE74qaudrFcfarKxVH7neJnwzCqLjrCStJ9EZQEA3Tn4aIcoZt7vk3zBtBlbJg2NVAe
+EYnEV1b36qT+zcf3Vp2DkVF+w3VPSdDEPcwWzWlsfBolSuq/mjK1WJyE/4s1onTXCoiuTCB/wbCx
+R2bMTDxyk+Hu/BL1bIT8d+qWsMcyXHZeQlvMujR1P0Df0345zwFd9q4cSsHaGqsBGxSCJE8ltHg/
+YVmaEHZmaS9lN2BWmx92Cvh4EPArethjX+iMKkdDRJF+fJ4CrDdv45YGo8lSbFAzgCajvdHbNtEh
+lBVBEmTlQPNADJGYtVLNEE6XX/c9gSs9NqOqOG1G3uf0bZU2TzgcNt2dkmViwz7kSBXNhabx7Ooo
+lbOjIXzbnVuka7S23ElGOqhklCJ+Nm0IxqH6fCe5Yx0xnT3Dg3ZViym/0fzoyPImoUOfQAuCQV3x
+RfqK7N/kVxDweSTKGv9UzCgCS2yNMCWlW2AEa+DqJMQGazQuS6Bf7JW8097XkN2sqIjlfmLYuQRv
+IJi9fZA=
+-----END CASPER ENCRYPTED FILE-----

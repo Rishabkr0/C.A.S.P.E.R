@@ -1,152 +1,105 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>casper Installer</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div class="titlebar">
-    <div class="drag-region"></div>
-    <button id="close-btn" class="close-btn">
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      </svg>
-    </button>
-  </div>
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-  <div class="installer-container">
-    <div class="left-panel">
-      <div class="logo-container">
-        <img src="logo.png?v=2" alt="casper" class="logo-image">
-        <h1 class="logo-text">casper</h1>
-        <p class="tagline">The future of assistance.</p>
-      </div>
-    </div>
-    
-    <div class="right-panel">
-      <div class="content-wrapper">
-        <h2 id="main-title">Ready to Install</h2>
-        <p id="sub-title">casper will be installed to your local application data folder.</p>
-        
-        
-        <div id="options-container" class="options-container">
-          <div class="input-group">
-            <label for="install-path">Install Location</label>
-            <div class="path-row">
-              <input type="text" id="install-path" readonly>
-              <button id="browse-btn" class="secondary-btn">Browse</button>
-            </div>
-          </div>
-          <div class="checkbox-group">
-            <label class="custom-checkbox">
-              <input type="checkbox" id="desktop-shortcut" checked>
-              <span class="checkmark"></span>
-              Create Desktop Shortcut
-            </label>
-            <label class="custom-checkbox">
-              <input type="checkbox" id="start-shortcut" checked>
-              <span class="checkmark"></span>
-              Create Start Menu Shortcut
-            </label>
-          </div>
-        </div>
-
-        <div id="progress-container" class="hidden">
-          <div class="progress-bar-bg">
-            <div id="progress-bar" class="progress-bar-fill"></div>
-          </div>
-          <p id="status-text">Preparing...</p>
-        </div>
-
-        <div class="actions" id="action-buttons">
-          <button id="install-btn" class="primary-btn">Accept and Install</button>
-          <button id="retry-btn" class="secondary-btn hidden" style="width: 100%; border: 1px solid rgba(255,100,100,0.5); color: #ff8888;">Retry Installation</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const { ipcRenderer } = require('electron');
-
-    const installBtn = document.getElementById('install-btn');
-    const retryBtn = document.getElementById('retry-btn');
-    const closeBtn = document.getElementById('close-btn');
-    const browseBtn = document.getElementById('browse-btn');
-    
-    const progressContainer = document.getElementById('progress-container');
-    const actionButtons = document.getElementById('action-buttons');
-    const optionsContainer = document.getElementById('options-container');
-    
-    const progressBar = document.getElementById('progress-bar');
-    const statusText = document.getElementById('status-text');
-    const mainTitle = document.getElementById('main-title');
-    const subTitle = document.getElementById('sub-title');
-
-    const installPathInput = document.getElementById('install-path');
-    const desktopShortcut = document.getElementById('desktop-shortcut');
-    const startShortcut = document.getElementById('start-shortcut');
-
-    // Get default path
-    ipcRenderer.invoke('get-default-path').then(defaultPath => {
-      installPathInput.value = defaultPath;
-    });
-
-    closeBtn.addEventListener('click', () => {
-      ipcRenderer.send('close-installer');
-    });
-
-    browseBtn.addEventListener('click', async () => {
-      const selectedPath = await ipcRenderer.invoke('select-directory');
-      if (selectedPath) {
-        installPathInput.value = selectedPath;
-      }
-    });
-
-    const startInstall = () => {
-      // Start install
-      actionButtons.classList.add('hidden');
-      retryBtn.classList.add('hidden');
-      optionsContainer.classList.add('hidden');
-      progressContainer.classList.remove('hidden');
-      
-      mainTitle.innerText = "Installing casper";
-      subTitle.innerText = "Please wait while we set things up for you.";
-      statusText.style.color = '#94a3b8'; // Reset color
-      
-      const options = {
-        destDir: installPathInput.value,
-        createDesktop: desktopShortcut.checked,
-        createStartMenu: startShortcut.checked
-      };
-
-      ipcRenderer.send('install-app', options);
-    };
-
-    installBtn.addEventListener('click', startInstall);
-    retryBtn.addEventListener('click', startInstall);
-
-    ipcRenderer.on('install-status', (event, status) => {
-      statusText.innerText = status;
-    });
-    
-    ipcRenderer.on('install-error', (event, errorMessage) => {
-      progressContainer.classList.remove('hidden');
-      progressBar.style.width = '0%';
-      statusText.innerText = errorMessage;
-      statusText.style.color = '#ff6b6b';
-      
-      // Show retry button
-      actionButtons.classList.remove('hidden');
-      installBtn.classList.add('hidden');
-      retryBtn.classList.remove('hidden');
-    });
-
-    ipcRenderer.on('install-progress', (event, percent) => {
-      progressBar.style.width = percent + '%';
-    });
-  </script>
-</body>
-</html>
+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
+-----END CASPER ENCRYPTED FILE-----

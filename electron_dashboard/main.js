@@ -1,445 +1,252 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const { autoUpdater } = require('electron-updater');
-const { spawn } = require('child_process');
-const dgram = require('dgram');
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-const ENV_PATH = app.isPackaged 
-  ? path.join(app.getPath('userData'), '.env')
-  : path.join(__dirname, '..', '.env');
-const OLD_ENV_PATH = app.isPackaged 
-  ? path.join(process.resourcesPath, '.env') 
-  : path.join(__dirname, '..', '.env');
-
-let overlayWindow = null;
-let musicWindow = null;
-let udpServer = null;
-let overlayRevealTimeout = null;
-let cursorInterval = null;
-let lastCursorX = -1;
-let lastCursorY = -1;
-
-function revealOverlay() {
-  if (overlayRevealTimeout) {
-    clearTimeout(overlayRevealTimeout);
-    overlayRevealTimeout = null;
-  }
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    if (!overlayWindow.isVisible()) {
-      overlayWindow.showInactive();
-    }
-  }
-}
-
-function createOverlay() {
-  if (overlayWindow) return;
-  
-  const { screen } = require('electron');
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const screenBounds = primaryDisplay.bounds;
-  const WIN_H = screenBounds.height;
-
-  overlayWindow = new BrowserWindow({
-    width: screenBounds.width,
-    height: WIN_H,
-    x: screenBounds.x,
-    y: screenBounds.y,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    focusable: false,
-    skipTaskbar: true,
-    resizable: false,
-    movable: false,
-    hasShadow: false,
-    show: false, // Delay appearance until Chrome / backend is ready
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true
-    }
-  });
-
-  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
-  const uiPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'jarvis_ui_side.html')
-    : path.join(__dirname, '..', 'jarvis_ui_side.html');
-  overlayWindow.loadFile(uiPath);
-
-  // Safety fallback: if no UDP ready signal received within 5000ms, reveal overlay anyway
-  if (overlayRevealTimeout) {
-    clearTimeout(overlayRevealTimeout);
-  }
-  overlayRevealTimeout = setTimeout(() => {
-    revealOverlay();
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('ui-state', 'startup');
-    }
-  }, 5000);
-
-  if (!udpServer) {
-    udpServer = dgram.createSocket('udp4');
-    udpServer.on('message', (msg) => {
-      const state = msg.toString().trim();
-      revealOverlay();
-      if (overlayWindow && !overlayWindow.isDestroyed()) {
-        overlayWindow.webContents.send('ui-state', state);
-      }
-    });
-    udpServer.bind(49152);
-  }
-
-  if (!cursorInterval) {
-    cursorInterval = setInterval(() => {
-      if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
-        const pt = screen.getCursorScreenPoint();
-        if (pt.x !== lastCursorX || pt.y !== lastCursorY) {
-          lastCursorX = pt.x;
-          lastCursorY = pt.y;
-          overlayWindow.webContents.send('cursor-trail-pos', { x: pt.x, y: pt.y });
-        }
-      }
-    }, 16);
-  }
-}
-
-function destroyOverlay() {
-  if (overlayRevealTimeout) {
-    clearTimeout(overlayRevealTimeout);
-    overlayRevealTimeout = null;
-  }
-  if (overlayWindow) {
-    overlayWindow.close();
-    overlayWindow = null;
-  }
-  if (musicWindow) {
-    musicWindow.close();
-    musicWindow = null;
-  }
-  if (udpServer) {
-    udpServer.close();
-    udpServer = null;
-  }
-  if (cursorInterval) {
-    clearInterval(cursorInterval);
-    cursorInterval = null;
-  }
-}
-
-
-const ENV_EXAMPLE_PATH = app.isPackaged 
-  ? path.join(process.resourcesPath, '.env.example')
-  : path.join(__dirname, '..', '.env.example');
-
-// Migrate old .env from resources path to userData if it exists (for users updating to this version)
-if (app.isPackaged) {
-  if (fs.existsSync(OLD_ENV_PATH) && !fs.existsSync(ENV_PATH)) {
-    try {
-      fs.copyFileSync(OLD_ENV_PATH, ENV_PATH);
-    } catch (e) {
-      console.error('Failed to migrate .env', e);
-    }
-  }
-}
-
-function createWindow() {
-  const mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 800,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true
-    },
-    icon: path.join(__dirname, 'icon.ico')
-  });
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    require('electron').shell.openExternal(url);
-    return { action: 'deny' };
-  });
-
-  mainWindow.loadFile('index.html');
-
-  // Auto Updater logic
-  autoUpdater.forceDevUpdateConfig = true;
-  
-  autoUpdater.on('checking-for-update', () => {
-    mainWindow.webContents.send('update-message', 'Checking for updates...');
-  });
-  
-  autoUpdater.on('update-available', (info) => {
-    mainWindow.webContents.send('update-message', `Version ${info.version} update available! Downloading...`);
-  });
-  
-  autoUpdater.on('update-not-available', (info) => {
-    mainWindow.webContents.send('update-message', 'Up to date.');
-  });
-  
-  autoUpdater.on('error', (err) => {
-    mainWindow.webContents.send('update-message', 'Update error. ' + err.message);
-  });
-  
-  autoUpdater.on('download-progress', (progressObj) => {
-    mainWindow.webContents.send('update-progress', progressObj.percent);
-  });
-  
-  autoUpdater.on('update-downloaded', (info) => {
-    mainWindow.webContents.send('update-message', 'Update downloaded! Restarting...');
-    setTimeout(() => {
-      autoUpdater.quitAndInstall();
-    }, 3000);
-  });
-
-  // Check for updates after the window is loaded
-  mainWindow.webContents.on('did-finish-load', async () => {
-    try {
-      if (app.isPackaged) {
-        await autoUpdater.checkForUpdatesAndNotify();
-      }
-    } catch (error) {
-      let msg = error.message;
-      if (msg.includes('404')) msg = 'Unable to fetch latest release from server.';
-      mainWindow.webContents.send('update-message', 'Update error: ' + msg);
-    }
-  });
-}
-
-ipcMain.handle('check-for-updates', async () => {
-  try {
-    await autoUpdater.checkForUpdatesAndNotify();
-    return { status: 'success' };
-  } catch (error) {
-    let msg = error.message;
-    if (msg.includes('404')) msg = 'Unable to fetch latest release from server.';
-    BrowserWindow.getAllWindows()[0].webContents.send('update-message', 'Update error: ' + msg);
-    return { status: 'error', message: msg };
-  }
-});
-
-ipcMain.handle('ui-command', async (event, cmd) => {
-  try {
-    if (cmd === 'CMD:STOP') {
-      const { exec } = require('child_process');
-      exec('taskkill /im ffplay.exe /F', () => {});
-    }
-    const client = dgram.createSocket('udp4');
-    client.send(cmd, 49153, '127.0.0.1', (err) => {
-      client.close();
-    });
-    return { status: 'success' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
-});
-
-ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-  // Toggle for whichever window sent the event
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (win) {
-    win.setIgnoreMouseEvents(ignore, options);
-  }
-});
-
-app.whenReady().then(() => {
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-
-app.on('before-quit', () => {
-  if (casperProcess) {
-    // Kill the cmd process and all its children (the python engine) on Windows
-    const { exec } = require('child_process');
-    exec(`taskkill /pid ${casperProcess.pid} /T /F`);
-  }
-});
-
-ipcMain.handle('read-env', () => {
-  let content = '';
-  if (fs.existsSync(ENV_PATH)) {
-    content = fs.readFileSync(ENV_PATH, 'utf-8');
-  } else if (fs.existsSync(ENV_EXAMPLE_PATH)) {
-    content = fs.readFileSync(ENV_EXAMPLE_PATH, 'utf-8');
-  }
-
-  const config = {};
-  // Normalize line endings before splitting
-  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  lines.forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed.includes('=') && !trimmed.startsWith('#')) {
-      const eqIdx = trimmed.indexOf('=');
-      const key = trimmed.substring(0, eqIdx).trim();
-      const val = trimmed.substring(eqIdx + 1).trim();
-      config[key] = val;
-    }
-  });
-  return config;
-});
-
-ipcMain.handle('save-env', (event, data) => {
-  try {
-    let content = '';
-    if (fs.existsSync(ENV_PATH)) {
-      content = fs.readFileSync(ENV_PATH, 'utf-8');
-    } else if (fs.existsSync(ENV_EXAMPLE_PATH)) {
-      content = fs.readFileSync(ENV_EXAMPLE_PATH, 'utf-8');
-    }
-
-    // Detect original line ending style
-    const lineEnding = content.includes('\r\n') ? '\r\n' : '\n';
-
-    // Normalize to \n for processing
-    const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-    const envDict = { ...data };
-    const newLines = [];
-    const updatedKeys = new Set();
-
-    lines.forEach(line => {
-      const trimmed = line.trim();
-      if (trimmed.includes('=') && !trimmed.startsWith('#')) {
-        const key = trimmed.split('=')[0].trim();
-        if (key in envDict && envDict[key] !== undefined && envDict[key] !== null) {
-          newLines.push(`${key}=${envDict[key]}`);
-          updatedKeys.add(key);
-        } else {
-          newLines.push(line.replace(/\r$/, ''));
-        }
-      } else {
-        newLines.push(line.replace(/\r$/, ''));
-      }
-    });
-
-    for (const key in envDict) {
-      if (!updatedKeys.has(key) && envDict[key]) {
-        newLines.push(`${key}=${envDict[key]}`);
-      }
-    }
-
-    // Write back using original line ending style
-    fs.writeFileSync(ENV_PATH, newLines.join(lineEnding));
-    return { status: 'success', message: 'Settings saved to Casper matrix!' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
-});
-
-let casperProcess = null;
-let isIntentionalStop = false;
-
-ipcMain.handle('start-casper', () => {
-  try {
-    if (casperProcess) {
-      return { status: 'error', message: 'Casper is already online.' };
-    }
-
-    const backendDir = app.isPackaged
-      ? process.resourcesPath
-      : path.join(__dirname, '..');
-      
-    // Try to launch the compiled executable first (for portable distribution)
-    const exePath = path.join(backendDir, 'dist', 'casper_backend', 'casper_backend.exe');
-    
-    let command, args, cwdToUse;
-    
-    const logPath = path.join(app.getPath('userData'), 'casper.log');
-    
-    if (fs.existsSync(exePath)) {
-        command = exePath;
-        args = ['console'];
-        cwdToUse = path.join(backendDir, 'dist', 'casper_backend');
-    } else {
-        // Fallback to virtual environment (development mode)
-        command = path.join(backendDir, '.venv', 'Scripts', 'python.exe');
-        args = ['agent.py', 'console'];
-        cwdToUse = backendDir;
-    }
-
-    // Read .env from userData and inject it so agent.py can access it
-    const envVars = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8', DISABLE_PYSIDE_UI: '1', USER_DATA_PATH: app.getPath('userData') };
-    try {
-      if (fs.existsSync(ENV_PATH)) {
-        const content = fs.readFileSync(ENV_PATH, 'utf-8');
-        const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-        lines.forEach(line => {
-          const trimmed = line.trim();
-          if (trimmed.includes('=') && !trimmed.startsWith('#')) {
-            const eqIdx = trimmed.indexOf('=');
-            const key = trimmed.substring(0, eqIdx).trim();
-            const val = trimmed.substring(eqIdx + 1).trim();
-            envVars[key] = val;
-          }
-        });
-      }
-    } catch (e) {
-      console.error('Failed to parse .env', e);
-    }
-
-    // Write log file from Node.js side instead of shell redirection
-    const logStream = fs.createWriteStream(logPath, { flags: 'w' });
-
-    casperProcess = spawn(command, args, {
-      cwd: cwdToUse,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      env: envVars
-    });
-
-    // Pipe stdout and stderr to the log file
-    if (casperProcess.stdout) casperProcess.stdout.pipe(logStream);
-    if (casperProcess.stderr) casperProcess.stderr.pipe(logStream);
-    
-    isIntentionalStop = false;
-    casperProcess.on('exit', (code) => {
-      casperProcess = null;
-      destroyOverlay();
-      if (!isIntentionalStop && code !== 0 && code !== null) {
-        // Use the globally defined logPath
-        if (fs.existsSync(logPath)) {
-          const logContent = fs.readFileSync(logPath, 'utf8');
-          const lines = logContent.split('\n').filter(l => l.trim() !== '');
-          const lastLines = lines.slice(-10).join('\n');
-          const win = BrowserWindow.getAllWindows()[0];
-          if (win) {
-            win.webContents.send('casper-error', 'Casper Engine exited unexpectedly (Code ' + code + ').\n\nLog Details:\n' + lastLines);
-          }
-        }
-      }
-    });
-
-    createOverlay();
-
-    return { status: 'success' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
-});
-
-ipcMain.handle('stop-casper', () => {
-  try {
-    if (casperProcess) {
-      isIntentionalStop = true;
-      const { exec } = require('child_process');
-      exec(`taskkill /pid ${casperProcess.pid} /T /F`);
-      casperProcess = null;
-    }
-    destroyOverlay();
-    return { status: 'success', message: 'Casper terminated.' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
-});
-
-ipcMain.handle('check-casper-status', () => {
-  return casperProcess !== null;
-});
+jQqyqxgz8ipIJXmvxmlC03TFttk0RehnOEJepVJY5jVDQubyEqlj5phpPC2bJUHOHZKpLK1ikBDf
+NC4xGLw8wj9g5qNFEUM/N7AD+CxxtUD39Z0E98NRHIOj+cZqEgL7yhF+pVUmzu+UWRMGltCynODD
+7UfDCcPn13SFkIiNojEGsj/W5eYjx6zTGdrs9R+vPU5enh5fwnliezADPxM4LMYmQ3zzjxFAZ1zI
+K7EfxS1dQ4MuR9FYsM3ncuqsqaAAiIAY8c+allz3CUn8oXH874QwfkZxc6MseoHOSBt2t58CbLUj
+Qm7nVXa1w06LZZvtRd11EqVBJps61hrW/5G2DuLp5FQ0uFNDZWmhX3lgCjusJyWSXTGI+VwtNCfa
+7bjz+62iPCEGLGqUhzc31udkqQPlcS8PWoqe3w8tA4hSEj6OU9m46min+0h55OxsdCDKHpEghU7y
+y7DJpWP6G/TtpIgBxGmcmber0XKuOlh0yZAZIg5WaThtsSxVdykivg7tqqL52SlZgVdXdFt/TxUK
+s2LcQl82IaJkBcjGcNCy3cWIVdOwKTqivaKAij3lGR4sI5705FG8MmdoFc61pBEilACh/XKbS4ix
+lbhkP8ugLulc5TQb71qez1VCtjWfSbWEy54gwsgBq9OyQC7RgqC0g2cEgYnzu+ecsOnOxtfYAYmp
+TwP4vrmT80Qv6Tdz+pwkO2lSy5dtdEuQgdTMva1WKOPbgK9CoRlS2wBHxWZ2AR+1frJTdI5o/6XB
+xw1o+ptvcJQi0vGM8enjHlVYtKHccTZv54Z0bhkRhC+L7Lj+8xjxtfmN8FSQqMS1r7sARRHmVcnU
+4b1slyfkU18UXX1zr7NTDrD2mk5YGBKK434sorqmKcMa5CHyPiXbTsVJKIcEV2ExgvSsmUTbMFzv
+MrL+3hnkGnANi87gFJMWSl1ZRS2AAYJxWe3CMDv8yMJTCzeoeqYco9oNy9g7bQ2aAlHbrwE6Y+tC
+tn+LiEoBa1o+ZFciEE8tpC56wph9w8mHF+SAwCpXWjxUXyTSvaDzGMHQbE4fEM3LOF9ybDGAkbVG
+yR1AbyrtCnBFdX9siUQpEMjpiMEHbFJaBXBOcReS6nhNBJHxY1wJtplKJPZkH2SsnQzFk4iJxAwP
+y059GTeN+glZNW0k+ZBl4k51TkJZCerkHbY0hEDxMRz9L08+61s7g1kKJ5421E66XcpeqdZ8U8DM
+h9DvR7vBDhSfoeqeM+aHDNerA2TATUdzJz+Gg8BA5sYVWWFJwnWzvhbLUYgu2Z494XcsCQLv6/xQ
+rVec4LSIWfyOYALa1/qPTVFTm0O313b99UgSX5Muz9nFyUgvux7+Dogi+BPuQ5tJ6n3eypA4m45y
+NmcRxQnOupgIOX3uZBHkf/yZFNKnuMubWxh4GbW1aT4RP4c6WEe3GQILeBLn05AzLKleJlyodHjh
+IU5O4s+ZYBU2uoNHZSyKUQgrHBDFOhJgUaNDi+2uuJa2bJmQlpCcLf3JCgY686f+juZm6WcaPBqK
+aVOUBO6iv3ocd8fLVCfj7U0lisikwhzKu7tKKbP+g57Ushb5qAka02KyuS2a+p7wl+0aZzIzZZoo
+qVBEbuFNbdXR6JwkTpQRh9spmiHngqRbFpXORU6MmePfFYdrgMlfCaJ9DhGtulPBp3hyLeMS1Qw/
+OvGofMFljrDHsJOLwUvSlf3rYYcQk0gXBomfc86Xd0n0bISW5BOqXSg+ONNtUclw8wn3uSe00033
+M8hTrjk+P2wPaEFrwk6gzUAJiLENMeNuEnHel2Q0F+FWdqOPN1B/Adma976Y0BUY0M50ExZcnVJ6
+pY02YLWlSSa1uXaP078LdlXdNSZWXdefnRJYlVcRvrSAq2MT/vjcBGQVFjwYxSsSvkPKVLcRt0JZ
+MxifQoP70DB5OK4KQxQGswAKlXY1itGskHBTii+TOAKzUDzNP2uJC4IeqvN1B+4Jke26dTFKCa68
+vIVGC0iAOlQNg9/DPe1j+f3hlcYsCiMcQGoEauwCyR4qsRtx5nrAVTBGETPO3DTi7F9xyvKoQQBc
+/Fx5wp7xtKBGwcMcV3/hspKtmm7nzDzttJLil8OdW+c+t/JKwVSFJA27Kmpc7nMdcIjAr/x1i8ol
+T8qhuU9PDNZ5zjUjUleWjx4WMj/WxpVGSVQuDSklzOAw+LgQbU89jpvOuBwmQxhfzmELl8Nu/M6Z
+6bBj0i89fOOsQmOX9Z7oL1Gpqh0toO+6rpwtqQOY4g15kLp5hA3OsEpfwu25pmVAqnHsRT+gJZpA
+H+vI5eiM4sODMCX/9tauvBvIzkZCfgyJD26YKik2/wgKq8wblul/S/hFt4SBtuavjT8qNUmbftna
+WuFFvNPxaM+Ba4wraB6BZIIqykAS4KLrhVWSe9BQcQNxGt/CaRqqoov43BfOxZPd5ld8n4Rjo4p8
+/33fYkf5n+exJfYbqlh+wQDm2Oue2cXch9YjkqxGh7jcEanpnuTLB9zPfmO1mtzk7/hZ5t6fWbOS
+tcJ0VpXM17iRFGlV9UdAYOSNZR3+abNZxOs9WLOtxmF9JtVbD6PhtRAtLKpGc6vkaHCvUAmu4KeF
+R5FwSRY2ElBRGrpPODiZFwmbglEP6JahQ46jP088w697XVY/mSme/1RxZPVKHlsEGfcFmOJZtaSy
+sNBPAsnvp5wKJrIIiRJPfYE3inYQZtJ2nCtwg6hDis9eJEIyYtIb7ea8znGK9dM945n4qC1pVidn
+z1EVxK1Uzdwx17t2wVQr2anUTvP5cDY9I3cItQkcJ2k94F2gYN41LBUQ67N5HW0OAQmZuviMRP6G
+EUoDiC5lonqYChC5yfqdbgpmAuj54/LvWwbDGtecX6tDPTWUt3KQ37JWVfsXFVgjTNvLJd6UKPHl
+AcDKZD3eCaP9/7jAzkn3rvNaKParyaS1vqzAc/y9f3SCcKcF4QjQrGKlyL9Mp7sY//UwegmxxRZ/
+hy95MKBIzJeTBurxKlj4BvalWhuIv3VuwlQeJ2sqo8NZYpAaykhJuJlyabh/b4iLys1d9ydBL24z
+dGOGaNxROejTmGGhwl21psaZTRpi5Ni4wd+SK5t1M3uTnx43QNTnrAsESrKOdL51IAdZkZWRmMNp
+XgF53a1c+yM/2Y2oUqQ/S7Aj4WBb4LEqNonoMHqdjOAkkt7OPB89jwv78p4S7Hzd40VNRUdSy1en
+NLEgq6ROcp9iZRmbo8wyEtehGOHdHSad8HHrCNZhAJy9AXI+uHGy5FgHDnGYE2291AakwRnw6CQG
+C0j53Edvs78KaCZ2wxpltWCzvy5Ygbx1BinFL+ZtqjCqxRgvEcMpgzTMwMcAHaFTZglJTNq3E1/r
+T33OAW+56qC0XNYqcuQsyfajcA+vJPa212s+LW+FAspgUxshH8nVjRNEMMkgpDizKzU/79dunXZU
+pJw0fz2vIJRCZEYZJsglTkDEhaGfLbaLzrKmjBzxVFW91nCEpuwO1ZHqq+mNCoyut78IGRTlV8qp
+0Lx2pdxvfDsFiAnyljdDY8V0NSC3MRZEH6LGwKNge+gtn5In9lY/6BGksCGMEdkL+YNRJbK5kKYP
+yN7ewFFFvy76OH4aJ85wuhH4ldJWu2PxBNjEFbWgVELCjRAqLOps27oxJpjDRjlRkEfQYxzaGGQl
+1YsXH+EquD9uqzQgGRUp7eLHSznFMk8sy/Q+zhsl8/MLAjK8aZDRH+7zPpwsK2wB2HmyZt+oYlik
+uw0Rb4I9G749yVxRdlx/sDgPAabUt9u1pAhEGW74GoQcDOFoqd1YbDxVLtjgad/yuYzz/RIJLgAP
+a5TLdkQ2m7aIR5O4wQgPEUXZMSJ5FSdYK2Gb3bT6ZYtHB8lb4IHPYeKRV/I33pI2krvkqVyhcx+V
+dwupVNJwg3LHkyC2q/hy37azc8c8vEtIv2gD2Z/HNxZJlLmOjvE4BgmO2+puq7aOUr69Jp5aWGys
+nOSUslSsJSe6+7PFCzKw/HjLaDpH25sn8xBAXurSqKqaTYaCb5eYoTniY7Zhpxdp5ZLSlIecu1On
+ac14+PZGoWRPwaRj/qvfIb0gvjFtrTcywajFE8Ws6lWlFSanLF1j2F8+OSuG13O3exKT1gv99QUB
+xt3TWdxPq5FNG7w6jczpG4f8apLUCMt6qF3jsbdEUTaocqLq8VEis8+semvTTu8x/RDRAOetX7QA
+jsiLgwtE4ZtSqQYT79yKnEDhivGQdvy2mePT0MYTrqUsHyGbp+LTMSvHVfs2Uf+6AUeP9RbaaZ6z
+jaMb48Ets0fRaFerBT6UbRVSfFDg4lEVg4wz2OGL4I4sPzGwqge4Uo2P3Uym2TDhOLrV8jJP7lXu
+l2iGtqyELWf3fBhAc2DVMExe4YfoxhCoC/qUbFg+LA/+bv9Ng2w8gbHoBYT3//OKE6rpliOO77Tq
+002gByH8jOIFKz0ZlZ3jDlrQ62vTKLrbD+1SBhVteUFfInvty0dcJDvFXmK2yEFI2XpkdJhGHHrE
+RUvqS0Xz9byKq3d8JHOAj1rn/XHchksqUwzI9U5IDA1n7IhYdDiTBu9oxm6dm7Z8TvUC6O/OfLnw
+ehMwfI0idZU6eVAiWi9g0MNyefbkZACXgB3dGmvigAk1xWNM0mPqPLd7gjsVuLziFHhOIlNdJ4s9
+o0Ksw04YKU44kAlwnEx/3IvnFff7uDVZKilEtvIhANC8fKBSHPbpDUrCkoppyuQlS9sdyK569lbs
+0mUM0oBrW20wW+mNFKVfWjpChOdITMCKro2+BaI4jw1Mho7rhIeepgqGnDAUOtSB9UM7mlCZmjFW
+m6brBllyV5NP0zZGeC0dwC1bIFb55S3EccYeQPvJT9A/1d6/hHQaNVlC6LBRLeQQiWwTUq7dVdQh
+wdjwFEfrAvpvEfpimUDCanI9uS7vW6vm5m8x67ez/Eu9c1xTc7s0pzwNOxyH8JQSilHTYOIfeeMm
+OdN6VJlxLwTdpLic+TTB6feaHcEsnUKjF6p9pUTEvIpaC0pLTb4VIqBEcvp24ZXrYB1Jw0L0Z86s
+H/w8Bq1aD8ZIjdW9dL9bdjdKLSF84h4/uHsLGNminGceLs+E8io5VWyWYUAG2JYDW0b94ebHoO3m
+2i2eM8Sdk7qAxIU2f4a1KQ9rOgjtp3n3jhRxYdd3/msp6jYQ5B7WiGlSfLMA+OZRt/DcrNBmXcLH
+6Wq2VYOwtdIDzNm0fq6HV7a8s9XPF8jwzVIXbt/Bn/FBsmj0fU2hK+lhldwciFuFMQd1vqSFrfOE
+9y8SVHGRcvLz4YfH3gaaYQhkY8qPsWtUsw3UDMM3uFUEe0mLW064wkcH0rYSzd1//lWOwFO+cJ0G
+vL5bYd4P+w/y5hasWgKxKjI2Oync2F+/voKXwpbCiswGvZA+gsnF7iBc0RskcSU0gBdrZKx46Pa4
+a7Rz2w7O9rTmR7NcPRNY3BupR6sK3eWEa7jeyr4J4qfTB8j4aAdN5UGXoY3KxLZtJS3vWTC/xFcH
+m0wOBmWT+TCKp4RPCb/1pckCtzGJ5LS3HjygcmVmiClMWvsVf2PKxX7Nq/tyF+QLcNtEpi1pzhBJ
+Ke9LNMi7k0b3Zldme77EOC1cFc5BB12seillhu9I2HKUKaa4zbJhoYlLPMsjmiXcJN4nFu2j6B2d
+jsP5XzyarXFxuqG23Anxs0dKWiVexFxdK8adqu+2pnZEXvDO96B9bYPmxg03+q+Zpjjj3JdIvr5r
+puaKFha/Pa6xT82pQE65qclUbRkFXR4MQWQNfPEqCx6VQRo1cnb9RS452HO8qUhokHvWNaf6Z2Za
++qJ6scYaCzmMb0VBrQHnM9rv+4D/+7onRGxr298/cAfnxGvMifeNWzCvqNub1BhlGuBsWgfS9q8r
+f8sioXxPHmcg9cskJvb/5tPrwEtbdH4KkGfNct0T5yIL1iB+xcs18fbOhKIJC/Q/1GdhnMIgt+s3
+g5vIi7x5BdmlV0UOdJhiAQ9fHeU3U5PfG4RYWW4qQpoc0AZkF5ceuDesrdSvYRZqXZT2DgPg/lrv
+nCF065QZuwmT45xWIDiCqbzJ8kw8X6EWV4i/XvCxO+IqsAxna0RxAHW/RTEblMDZNHTqwqvU+yNS
++P4mrhnzTG6rVMGUGEYVkrEEi4kZ5hPzmE0SkZNsE2hqomwsUBznqx+ov7VksaHpA/6golNhw+ms
+8ebroJW4aeTeKMcxHAxiaKVzKVg+6POMFhG8jN5CWLZ6sqnkTLAU99D6X1MIW6DGeQV4dRtII3vs
+GZgM2FFu1VKBOi0YnYB+nlKLteXhnW2RnHzJsjDarPB/QEqpF7EzwxuP1Hfq4uJHFnZdFmy/oTEY
+cRRp/l1aBQs1gnm1GrkTJ/iAEB/kNL1ZTfy1Q1gi/uZODDa5hKtBNbwn4ojIxGOl1sTCLi5rtOJs
+F5Q9prGt4IZ0+ZKY5qDGJ9043FNeYQ8H2foMgbpy6JMqjSoDqI54qH5x8oakJVsvZ6k2r0Y+Yy2f
+fEvnkD+DFEOwiJfwzzxC2rAmfGgqSzaBhZb2kipPnvmdk0/bzrpbIuvQiPAlKa587iyvakFNiFv6
+gPlvTiAh1KVw4Rbs5h8ed/ooIP6DXKmChfzsE+qt6mxA4wx51xa+dAmqaEaWqs5w2RolJ3H2o1N3
+32KjC0qN69aGQP19kndA2GVaQHydHDOScaAqVKaEWNs8mIWv7r609fzbOFQTKf1PaM/kNMHRrx7N
+2NGDOJG+ei6XSblNcaLiCfbyMa7SiM1SuNixdSpynut768n565s5uTBvMrUEZ4uD5lvjaTioKjRV
+c0X1p0oYIRksVt18P5VIoor3psqR9yUJc9uqa6r0K0S1rEFKxKU/nqzJT5WsWYpnHwLKd1znxC9d
+x8dafUJkKBo7WKbrSGC1c9i0527wy7gFEufYFgaAIjUUPjjzqf/o+5DvvAxUWzNUgl+dt3rP7jjp
+jDgwp7tYH8NT75k2gDDJ5oB6wod2mBA6/FObMB1bkYXstRYlOBbDx7CPbDQWZdxXps6IjD5pJW6F
+SoTa9xUgbxfd/kJZlwrrjBlRQ3KnddUKrIjrDhOSyY10n/GUFplCVr1LIuSHIpmXccoIjXsryGd/
+feL3feaSQz5R2swBRyHH6VbQ8aj6sViNboBK5Kqngn7fu2Qw1LIyZl3p7B82jygcT17uYnybFpp7
+pMjvLQZfQ5H8sbaS7GxoWOcujfBANNRT9wtSk8A1KjWCSvSpXzyU7o1z0FLmoXNyXoLjeC17aGjv
+9gM1LHscLori0zleb7ebk9iHRprXvz0eCDriaDX+uQdINH2WQSkJdwn+wUbpF53F8cK+x5Z2fhbD
+nnWzsF5FkYwH7AWTH61d4nhXb2XUgnRM2PepBfW2eT+t8tT6wDgWD4UzMtPtd1QwitJWky08MIZE
+d9P4FBGY/akxEtutZHZTu4Nne+eZBxaG6D7oRvNT1ELGoj80ukmfkBV/iQabMPg2I0korNXqtVVi
+j72+mImkx4F8i8LmRU12o0449HVhwSm+QEoDhTBS7JnFJ3Bddng+G2caa5FF+5UMt//BjNP3dFsa
+TBTocM1hByQ7EidUP3LxEBMIZW54WMMQnv6wTrJab81ukp3na5rCtFjbndPJNDo/B7EBOdLG6lfr
+UjJpSwY4VRvIk/lxrEEqgqQgHo3zPjhEjqhCa9aDQ8pz2yAFn7tpHjVKB4E41LR4lFlGymdkp+VD
+ivyV5muGCi7ulhkKFpHz8gcWMn1/shadxv/+PgZ9prtbeSP80zW57sfRXz5/KKil/q/oDxetwM0s
+DQbftCpG3yG4BS95phFmXR9zwsFBut84cyxw087i2H1T7+Ow6OaDc4fJ5nV350S5dxjVWN8QlSWm
+UjjBPBO8Vz7pdQr2dKb8t0xTeIUoVVszT+stoH5UVNjJkBp6eatgy1lVAeQaVzvltHWyde6ljYx6
+vlXzKJzbebQr7LXJTn6eJTRGsQYNi1rLF3lsgP2jjGToxYphKBTCqS7fgURIn8X8iZ4iW3l3tqJl
+oxgSXuXuMf18ng2W7shv1JKRIOKYiWtkTf7YlvA7Hv7cCUatoYfxjG2bZHLpRH6j+LMdwRe2muQn
+Vs9UyPiX+C0DtsaNpiKfl1RHTsWjTrHbRRpZHMQiY/oU2lj51gfN6XLqms2V9FreeJsUou/Vk/Z/
+Yn4kbrR3HLfSKt9egPG8dGCDPzdqv0FLRk9CmAln6oLdLGHICbj3rk9xhh9sozI3jCS/g4N6ybAn
+TxPTR09loW19Uvb2d7k/N1dOTVHJCcJCJe12kCLUf0INJmhU8qk6AGXEYUZQPRg9dYnyVCP183Ps
+YM+H5scxd+lrrsPTZ23nT9YOIUzBsBbnAtWyquGoyFIa5zsNvKm5qx32hbBXmmlxPXgNgwC8avST
+AedZo3jGoklio5BUXteRjVTDHMAQEmAIhT6a3jdKk06Yef4MDaiw1d/eOMqXOnBEmEVpV2hL5Cj6
+VN0+UVGTGSxbDb7PsmRwnkZshPER+AytbVXPD2UoCI52U1h9zS9x9m9DenPwK3Rp87ShCyGkEZU0
+owKURJqIu1S+96B23mflXKteJJLUkE+u+f0zu7peri2jnuirJHhK6B3apPF9FjflMzpEZ1k6viQi
+WzflsLiCTaUOWhMGoqRuxsFj6dv2tMT1P9YJo9BVsLzuvtwfWFD+cgGWcJMDEs8PJsPsBQThyNr7
+nCPQ2EYrLTjc6zCOGsf9l6DsnnDpw5lPDdoqyNX40o8Rkah8ZHNYC2tZ70H9nRtES17zKElOzeBM
+3hDQAK/VuWm4MbZ1L9J0X3EzY0FijpTiaIryLiDMTrNbO7bRND5I1f+rlp1dSMm3wH55EdutUpgj
+CQc57rwKVM87EjS6q4qSw9fTnySAE+ZyT0zdSxc3cH0FjtLfeVGrf1AA74NoV9SnNAWWHMIHtwB6
+AL1lb1JdaktQwkLLDOMxe1UfeiuHoNxhFWt9vENRk3o08pdBf7YQfbrGpNr4BzecBr21QTwVXAzl
+pJYyVGE6p33aCsbFGOgGSdmgPjrsLBBL8sZ/ir8InvnelAZW9pxBb7oXGaBIMsgr2d4Qh9nWBsHz
+C6nIIar31QuImohpdpQdUGpk3uYa3pLNO/9aQ5dhzc0t5hEfrOggVLHDEcQWTyecRLhTj2hVwKs7
+jZYOeS6EcPwK2zqiwnMrt+AveDp54azpJk4JodsN4P+jlymjZK7/qsJLczGtXrzo6oWN/qA9252C
+skGtkC4XqIPgpM/slr6xEuCVru5e1J7Iw+FxT23gp7/1GWsa5TI0sxqAqWaC1TAwnbF6tDDqsZB7
+GKwvG54BRg/QLaVFUAVx9dGBmV4nl4i4pbZ9OAtWNSb2vUIOJDezYHTw4a1ThmAQdwbO06e26kFV
+FmbsPM1ib7qpGGq9CbVFnQ88pSm+Hs1OrFVyTMHMMcKU+jutjwfXIeJrcIwt+Go1hysC4bg/hdUx
+631Lhcq9jKqg+8Mr70/DOGVUDmEzMTbQF7Lu3Xmd5A909RhUAKJjcasQhBMk+uqOQOAL03TZ9bxv
+kH4ErUHmUVHR4wkNZKBOF+fz87rsFX8EvNuClKeHUZ2/cU/tbqZAN01T0BqM4wkvySnfhs8ZIZbb
+GGgJPuiuDBURyhqtaYg3I/2DJpC8h/wxN7TAyY99e5iqhg0b6qiYcilO/mvZIWfdl4gYlFi/SXfn
+zwB2+vhtO6BXOfS8+AAky16M3OFM/CGj764ikhxBH4UD5gWFtFNzMIy/rs3da8MtCKwgIeS2fU7l
+/rSSAjlTpBrPxf8TfrOQaDmBI6Lzor5TURNtWLtXuXvgIW5HVyGlwJ4ds3o1PDLuatOnC+LVlfSY
+VGZiaSTmsXSVmw8QO1fNcBiASe8R1ZBRQIwMpRERqNlaSsu85daE5WU8dY2qBByjOqz9Wtzag2ar
+4cMxFY6bJ3Vo/lY9sazK/9yAml1wxrJW+U679HcQP5DYS/2GXR2bU+0baehIyuem2RxJv3/a8cOk
+9u0yYFa83wX9uf4/Ya/o2ucHU9a/44rwk45m8LBwrI6ppmwtx2kaZhizztTGXnrRs/m8pkPbfOk6
+7eLtHAT5aXeHFJxF39hZ83675LQ3HfhDa/fZAq1fZjqHxQYxd8wVVu/ZPBZwIS2y2CutCJdsVejZ
+gm2zDn4BM8QAIQLmPd8L4wNknX7kj7vh/PoWMorkUuzG3TpUC75Kp23RB2YTvNfIunOq7XIwpkeo
+YkjCcgzpLaGKTTKp4NVHeqwKk+I82p45AfUimZ87/yXT027gOxaqhn91hLnCfOu9Z1IJQ504IVQq
+7GKt5o7ftIJt9y/bqunMoNtknUqnjQczSv0+aAbh49Gx+jssmuc4prEsTlxp/gWUGxwuSOONNZIJ
+EC++OqzgCy0fPt0Z4pBuD57BEzDK48A9VE/bDR7YjtsJZNmHEDL4+Hw98Qymkwp1gUZFHGD1kIU5
+SGnXOl5gW5PEtbDrSGdFv1tvDI03enWjVZpbP7HuWNYC5kCwp/o2zt0y03BBrIF5gftWjCc61YXS
+nyM+xbHymicP0UnD8B3FtwzX3ZqhKISYYzJz+hpNnlM9uf7dlwMhSq0Gqy8c1QYSZ7/wcEj6OUDH
+80l5CJefgKvylD8hRLTL7btALk7uz3u5P7CJT0gZr2U+myVjhVC0Lhfvwl0++p8oTrBmL36rqfsG
+sHtSO/6O9HTyWbY66IIcgTyHvXOpkPeQHBSZHKq4mD0+0OKz62qA4kJTzvK6tF0K3QM+X9aR/Cmc
+tGB4QbceZOGsS6GXt57zf7K5lX3b1tUCmRZdCvvAdT8JAPglVYFqTGx2pZ4xpg6esbxHXiTXuJ8b
+Yq0SqK5Jm195FdA0JtA+lMeqRf2g5UTJO3whfwsNwKPZhCFFgfF0gTQypG6+pHb1pyC1ffgN7to4
+6yWB9npMkJopT7m6wW2LF2TcN7tOPMpsEXY79kmG6K481Pn6nnxC7rbVCtsUfx5GEPDgKGAUe+sK
+BdIwfceutUDtjia60NJrEc59FVgGa59217DOycMCXuOoMTsXHawq7qYrHcA3o4muFhmRXtnkH5da
+T+7OLfpZjLT9B6GcdpDU4zjXCG/jgmzdi/AyKRuWDuLIh9ZYwsiMmYT5oRmUZHcz+XcArgtLrxfQ
+G1T10O23AtK30YudDqKwzNV0EKKLK4aum9RW1fWeXM3o+QSw5y9gZ9q6pn38c6eLQbLU7j9msI+r
+CLuYeACtLjAgQdv4kCuu1Pt0HP+3LR/lNT2mp1Cz0cuHPNMYa9vB8D65UPbdGqEYVRL3LLpGsuLb
+Uf+NB+m74wyTRN5j0611jc0PANPXu87J9154WWx8GBpZBEsICa4B64Et3IcJIYzo3PxKnKuTXpRR
+aXmnpS/QHsGTHt4ZQpQfhlMAGFDBSIunCPfK6EFNXAh8Fhoz9its0PzV05JCH3xnHMuRS0reo3nI
+li3zcYhjhNA1E2yGGsnyWiqPzq5ZkKOm9dSYSx8WktVus39F+8YjzfQZfEXOSYm1qSUBW5vOlDCv
+1b01+qT76jFOmRRrjU/ypNh1JPXp3KBbEeY4YF4u+rtC1ztXy0p7bHiB9GxljOlb8l0WDvRrzNeL
+8wxmGuHSBvfDvtJVwdqJ4EBjwIFdZ3F8Qgz3e+lA8+f87UwgIqWtU+sobOoGpWcufgWBCeww/5F0
+Yr6d2RYJk8gi5EqO0xuMms6kw0a/vAxxzthxrXCMLlk6zbglazAx3w8LjGol6kPzDVGC5y5eiwR1
+GpCfUzVLIppZaMas5z6bxu79tWgKuPQpoqqdQrc1Htiusx8/TN3OMQdkKAIpUIrmP7PKptCP3edC
+5DEUNyy4qTu2Kpw/wUX4e+UOpoAKRDbz8RMcIVpnvq5FsTo3sBSLj/zVpEPYUAYVYYAzRwRbw8eE
+aIjY4z9gDwVLzPRTXRO+Lx2KUkbFVkIzCRoc8xiwrCOpQ9jmETSun879yUY40NjrH3QyeR0BsvdN
+WGzWYPBC7UJ7WLZGjbIa9bfLuzlxWbzty9mUp35uxxpV1C48AFROy4NMWh6hlqFoXMEBPXOZ1kMz
+a1wsdXenIQpWHHM67MXFyFOT3uixschOk2ZTKzpZoFK6O6i1ki0Ft0gojo2ppV/sutPobwRPsn1E
+B7ysQmRHNOrNFFnnPDcwXh7wIxSsxUK0MtVb+DUFFTdmbvzGJsfU70CphELFjpMKGbEVoixWz6UQ
+wHKt7BAQreLFXyQC/58iS/xMng3lEaiUJON2Ymrpoe/nus958yeIW3FJ0OaqgyRb52nM1Fz69cry
+rAhjA3Qg2eMIOTxDMGQplicc1FhFSYlOWnMdAd2lM2+H17eHtoA2YxTRDQJoOK/gGYQxPKLU0X0f
+G1MWlpbEt5OpdnVF9+3MOCIIALcfxI429g+WuXSxrXNuVPx9S3HkTleYme/COwgjDKHXgk7cZXTr
+CCkqGqOOiPehsMP03+8UiqDrcQ0kLf03FB2LN6pg2cbZF88JnWffIJXKXkPT3OQUno6sGW25PsHp
+Bi/2ViEmO/irV9qrIL4mSZFZ1n+zYL7cVBnhk6Ze+zlUh+Bfysxn8I5EMLT7Ktv4GtPRF8TRUN9L
+7C0U8qwjIn5jNdmS7d/rNfS6jXTuNnnLswkkk3QXYox45FVlaq8LAix7TXBifJ9gQdwtZqnehT57
+AHMC/Fkm9w9ym4o0iPOKNqt17iRw6+B0FvC6OQb3k3ut/2WLdliEzwU+eMWmTlwifu5mbp72LPfk
+fLodtYJl+18rYagse8kLvsC+yj+Apu2rSaYCodOebVsTv6Wv8ts6Mj13Fpdihdg/nuKuViFiUnNc
+DeB/cnvFa2Ej7jnUtCndaKMZiofGve+1NrnV2Bu0YwkRJ3tSsadXEGwWfU6MDb4MgmQGVtGOwDxi
+EmaWU34FbEEhUWuKL3Wql1HHg4HOdkCtMCT3mg+imodBYcEF2CeorfihSWFUyvcZgWiyzKLB8Lpw
+94VLdJPc2NZndpDZaF4N/QiMAxJuXG2zP6ayGZ/u5OIDegKVnOfCJS3kC0FfKPw4FxC33BFJ/QNz
+FnWcECFLzVW/ZC6Wz492lr6YmwGx2pKYo7HKmptm5oZD+y6jYlzKDdW+Uz56HfZ2A8sSMGWp1FEv
+2p9ibjTMKFeQ+szrgic63kEQCfHUUJuGkUbez6Amyu0Rq/V2aH6ectq1HhshBL7ji1aLc9w1QfmJ
+zSUgCukqL06sJO3zzfIehoFKyJOWT39pwclwoWX7adRDgEDGm2PQwsljMx8NrzAzmbn1OUUJvo3g
+Cq6plSvgEks4uw6mhOdaNxISM5WfBkv26HrTrCGnKfLmu/4Dibs5w6vbOKkrap6Wcokosca5RAvB
+S6hYRnN/kBBiJiS5eOcwxy6saWDZge5RPfpIIPdZrLjCNRyrg517rBVlX552SC2D9uWEt1kBNqp3
+3oc0qm6Sax4yj+V+7kSeqkciZllY2rakV7KoNTCIYYSO4xNPDNmrKEmtAgm/6D5e3QF0Ip5F7/c6
+YZ6Z31O5PhSdXfslJf3ahzEGTbxiB+z66PCMDjt99aQpTYff4tVOYUIR1aMy14lfK3f813oaEWG6
+OshpP0ggBDf1IC6ef1gZivyD55QSFMXOvtnNjQwPNi7T01NcYVcMCsh7Ir/qeoV4GNv1tF4apjNk
+GmEls0GA2XJh6Lk4hDYj9APS8LrCIaDYwSD8MmOpGa2dUNO/GkztlLlAVYm1ZvbBSp/90ixFLX5H
+gYJwrDAYrYdmBqWKAZxD25bpijLSM3OK4dDwdajHvPr89zjIeA2ngoAca1EnAgTtorjBPxu7mKwI
+D4+lIiHAHr/PzjixHGCkRljx1U2ci+PrYwIIpVqElN9vKmsP8FnfhQRFPPV04rKhh1Rc42gKZJzG
+NjcfL0kyuMrP77LcliH4XtgxgXtawqu0WsyWiWE0DUc/p75kCeqX3PS1xm0x3yMtolF4EQ1K2EkP
+OZUjYZsl33dHW/J2NJJa2xEHUODplDubnytR/qHneMpm79KA4Y6BFN2m6ri5rLSMGiOaOuKzpV79
++cybK5iL6rVa9ET+3f+gIhvx2RXQCikTAV8qYsBwu+rlpBy0ysEiW7KU4yvQqJweXEVfMZ+U7vp8
+BDzITHD8O1aqs4sebYLnHqc9aBRfuTEuhXzwgGne5+2QMicGUCgbw4YL634RL03950Fjxs7golls
+5lgXwn5t1GtBjOLJcoIgfYLnT0YVSKzxf8LD/7/MItUBCInsC5SYfaLk6AeWecF9jP4/YVmPgegT
+Pl/wC5EySgIgKZg+lopmBChQgJcoajf83ekFpyyGIG3lFZqjQ1MElva6xdAZkCEDu9TRrlzfvw7X
+WLq0cYIcdgArIThQvcwCyRSIzunbg+EUnjqp4eUMfb0mNHwEyR4OGmQqgwi/24LaxTVaTZOKpBU+
+5sEctzl9R/qavKhCvOrbQRD2M0bTyWyuNs1AX836fIYQdmv3zLPuHTnuouFgmm82iadRK9gY4uVD
+mRqqk4eLabs+dQxdaAAyGwl+55VCZiXp/eOorW8k8T4hcBtlk53f+0PUyfGZAz+1eCSflWwd0jm1
+MEmcIxBl9DTEBgQ8na4vr0I/j+Z2QtHeKfsjizqJ/L3Yyzjs53Nkvt0FIj+xEcHepgbQm5qYW3/T
+UNgn+bSoPmp1OQEtiG1yrHV8lVCUyDeGnZezdFyem8wI02X6mCtOAas9cNSD0iJj4r6/DRoUHi73
+x50a5fRaDVQZxis6kTAkMJCs5jXbNyvad0DQ7/vko3JTSwL3GWt8do2K2GqgJ/th8WCn1r44/7sY
+miePH+EyfYtq0p56Zv0F+fDRxTR1BAq+pT/fwlTdvFl+HYfO26glObb9l9/5nEIYFTgY8hNWG6rD
+cyEZZ/iY1W6EgiJc9Clwe3Pl7a2lr0S40TYjAhsd64yd40REYISdFEQIbFLwPsuy4n+45tqiYJFk
+EAX37Vgii642M1FU1Y6UecC3W3V1aCQbZAystEXPr/Njlgkh2AKbsuzmSGLHrdYzsM5OsSx1dI0S
+kwGnmO8YMvkmA3NwBtcxyHhWJEWy2w6ghWIS2jR2LtBeVl5Xo1y7w+10D1TJBwm6IiSn/YkJOgQG
+Oo/pyJ1FgUuuT42bUUcfQn6TVhHeiv3TS7AsIKU7XGpaZ5AdQVGyrcwu2KpOfws4aiRiX8MurNQT
+ol2pXVnJc5SHnLgwCs1/BP4dVYgpVORzQSztr3meSvY19g+QcL8o007zQ2jomUJhI3N2XpIUx9iY
+WbgPY6BEKNAhk2ny8HuPRp3UV0rUwKYQ5vuSKdzVttqFU3HJokX5qgDx+FrDVrGRHuUsTdYoCCQ8
+sAQjfdS2stJOlUAkF2uE9PQH/aAzcZXnlHZA0eXLwFjV5QatHSCV9T3EcDX20ZEspgsufZnqfum+
+JUhjf/W/cRMWfUQ3XY4Dw4zypzpVp/cmcvXILuolEjK/e85HzaDnEkYWgehCAYPbTBOfdctr6jzb
+TM6A+Qh33FZdcK59aw6SpO6hpHnReabwT55hxTxWR6KgyvfvLbTIkSi7Qqzvso2Ntdg/sp2AUaEV
+8B3Ss3yPhkdjmhiiI+SgvQYiFvsH1llNFF5ytIo2AQu2pBwUUuB6CdBrvTodqqlWSc4tiicyht1g
+u9IWnsDkwMKp0/HctL24Q6VzNGPa/dM6q/zfbzEByrcgf6V0oatCwvIYznRoI2nl5PiLJnZvsEXk
+vTQkzqX3OFz5T6R+eqY7D1eHUgLi44PnvorZN3MHSGZ8Y+WBDf3Z7SpctFNUBIDOMvo9kthiSFIG
+OE0n8yZ//MLV5Pwz/Zsi0GrwFYQS9291dHXMsQBAQsU3KIK1NwU23FTUvLDDICyzCruPeJUc2E1L
+n1awhVrigG2GVEFgjqDfLl9NzutwjmqW3XTQ7HcV8RuAQnp+Uy9UQb+5ldP88ATOW2HrAuZm4TYz
+l8sDlNGR4uJQKOia8TAePMNDt5Ho1LlCjwXJvnx+G1ex22IZWWgXTuLBXYxtxPHu+Zh1U0J2NqNU
+NPlwJRwKpC0gXMMbcjqb0W0Z0RpW9wWkGX0ARMwEafAq6lRHMM4qmJ4McYr1no+FHjIvboKEFPpL
+N+nnBacqzonwIHCrYWgXiKNxXvzL4xBvetD+Yw0kNthtWl52ArWZMxVIU9PbKwsV09QUmJHKoMH1
+PhToeqFZJUHGNlXSJp99rrgB1jf2L+JZ/TzePMdiMMoeLaQhxSIbQslMuanj60hK5Qz2y/Yf1YQF
+CNulrVby72emXONhi0TcnV+O1p1syoCeWg+x9Q97HlwvFqRGdyK1jT7j80WETrqFx+4dOhjua9mM
+bWbtylBAj5LneS7/BJeSFKE7zk5J9Vr8LOZfYxHUw56zPHZ6CNnvDYyjHlLl1qIxRbldWKTFiIBh
+r60dU3jgsylpIJhCWIv+pAg0vOxco/vT7lggqiwIiC0ZC+Diu+gdKSpsBCnnhJAkHgFgtxQtirqv
+s0S3f2XJqDCnp8aEC1C2u+xbYs1wSdXOdGAcC4jcJX67T1BLs6nCWtafmWwCZJsxI+rO3eqqFELq
+NesT+ib8Jykv401ky/jie8wSw2u4KTDWPXbZKVd7Ihra6HaTg9z+O4OvNH1oAI8eLK6DcA8L/Dt5
+CRtvreQGhh1Xm53zqRlqzx9ZpH5lo5iMHVbXG6GoPQlPILJT+m7rgPlteOW2P7gWYdDFKBEdfKU5
+w3eEBLnQamSkTIC8PWrtgOhYVclWyTkDPD5BZqFb86vEzX9BNVlFxzEOtdlHZSpFjLBTe+Jw1QOl
+2vmz6EWhcugDQyRvrKac1QI1JJe3836s74o1HFF2q7qldT5UvKaaQMsfRGnzfGSCmLgKwnbWCM9U
+QwX07dtacDIokjVciX3Rfbo37ig/7spTvPRgn2GCawvtKvxf6Y8VpmVBugLhHp3cRDD72tNw0S4Q
+W2YHMMSqex5LaL3zbuzA8LtEXv3AJ0zZyMXWGV6pZZV9M1ll0tFsnNSz7nHJNUwjYB19K2E77bMm
+itiZYdCTjY8zDNQqrnwf5PdymMoNznlW8IYPt7UbazOk3bzjVM4aWLNlTl9NEhB7Smp8OlAcUo7P
+ACuu7QBpLN0WFG+4wP8hMid3xFhyLCeHZY/ws5gXz5O9TxI0E6hRTAxgKlgAkff50tm8rBX7NrS4
+B1En67F9ANMA8lFWHYm7V4A8cH6mAKIV6NYC/QYXBjyi0ZBVniatm/oEYHtyfLIkNQ2ns4UTyCyd
+3hxmSQl/SMEHQ0qwwHGnqWtTparheuB1j/GblyvTWJuz4sLIM37S8b0ieJkD42kmWoL/U5UD5Ece
+tQKLOwKepC6DlmcgFceifjPhGwBrVu1wc+7Aj4aNRilIPvW18mn36M2VTgV+IarKM9Y+5QwRvSHO
+gmK9+rogb/5Jbuks85VM1Qh0fJYPpGUfeal3kB1hgLRgOsAmx15BqwsXIkrKYX5436D1YNKkKS5H
+KTs40URrqxgRXiZRnEG66+GNf0OvZqN0jkEKAsI/zWv+gs6pRyS7/YscLcKkxkAOIX+Lw5iGaCOM
+Uy5Gmef4ajamhPNUiDEGYhhVVpdhvNsyKGXVGL7DlDu6nv+zdHE0JgZTXZ14dHwOq6FSpqiClRvv
+7klMjNhJGnRl/jimLhfl+j9MplEi2vibqvW6j8lPnyn3VqaD1Q+3dopVblXt9H0gUgfCOBkp8imj
+eq8mJM7be0Rj2LykfF/fmxhYxB+ePgWTigbVPEVrgEwMQtgyWpIc3YnC5sWKcEx7ZUFgjLV818Sd
+/Bb61UzC35hX9oNkelYxIlfq3zCXXh8g8inyt387LYTpqSRbFt70Z1AWmviCfC4olmBG27Qgxx9q
+B4odjG3fTaDKcr8NRsA5wlYjMWp7S5PDHHnb84OGiQg0PE35cB+JZUWxbA7LgVR0OtnC9DhRRiZJ
+7wNVas5Uj5ywGoFSYHE4d3y8x7EMD5ZGTLqISKlmgQ9GjMY9ldL48B1Xj/MvPu5bfkHvkrTZTyex
+ZbPvVmnlPUDSTG1dYPI/K97r1r73R/gTPtYlfjU+kUlU88lZ6ywf+IS8fJ6oy/2gGgplX7nfBgoF
+RfzVfA03n5dJQScpYaYoB1Wdcsxyrqp2dVZEyHp0npsRZXc4yr1iKGMs4xj+kMp7Jf3lNQ6hZ9Ca
+pC3+C7iWqstQ6ZKMjw5CfI5/ZpC/gjMKYu4DFh8Bct+28Mdwj7xwOBfGw1w+LlW4mgEO08pL416h
+cz6BIJ5dtMBoP5TkmN0dClGzqXA8XjUJH3rQgUgW7oq4fZUlh8In1UP6fiNlpI1JXWD2GX2NoLy3
+9hwB8Cizist3LA0gXBJj0T0YZT5Ry3AgadPnnUgGwhpNgcZS/xcVc65lSpP5Rld9+J+PM2RfmbQ3
+70WseDTeCtYFw/8/yb1Nn9zUbkUr8zsL1oB5UxoQozqeFqBn8mHxvln/oSGPEIcP9ci9hRhw3sd0
+3aOR2p/NyVHtQg87ToF/976MOOlbQCBwRXPeuDocMWX5eqpsnMZWKWTbGmBY5vuE+w2L5nxttA+B
+svkgDTGaV7F/O/hi/Y5XiYoOKP0i/eDJXvmELTB/Agb5P00+lvXqrnaCWy0NZKVeMtUbk1mYPiRZ
+GIYaXue3Hbs5mdD+Y9F15Y5FlhI/qsygYPgMN5pxb5knXvBdFN1g2CLUvsO6PFDwjKo3QDZoQIo2
+wp+D0OeuAZkLzL6ouyO4LHsXIs/xmA==
+-----END CASPER ENCRYPTED FILE-----

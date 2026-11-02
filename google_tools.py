@@ -1,213 +1,133 @@
-import os
-import datetime
-import logging
-from typing import Optional, List
-from livekit.agents import function_tool, RunContext
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-logger = logging.getLogger("google-tools")
-
-try:
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
-    from googleapiclient.errors import HttpError
-    GOOGLE_AVAILABLE = True
-except ImportError:
-    GOOGLE_AVAILABLE = False
-    logger.warning("Google API client libraries not installed.")
-
-# If modifying these scopes, delete the file token.json.
-SCOPES = [
-    'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.readonly'
-]
-
-USER_DATA_PATH = os.getenv("USER_DATA_PATH", os.getcwd())
-CREDENTIALS_FILE = os.path.join(USER_DATA_PATH, 'credentials.json')
-TOKEN_FILE = os.path.join(USER_DATA_PATH, 'token.json')
-
-def _get_google_credentials():
-    """Handles the OAuth2 flow and returns valid credentials."""
-    if not GOOGLE_AVAILABLE:
-        raise RuntimeError("Google libraries not installed.")
-        
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(CREDENTIALS_FILE):
-                raise FileNotFoundError(f"Missing {CREDENTIALS_FILE}. Please download it from Google Cloud Console.")
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
-            
-        # Save the credentials for the next run
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-            
-    return creds
-
-
-# ==========================================
-# GOOGLE CALENDAR TOOLS
-# ==========================================
-
-@function_tool()
-async def google_calendar_get_events(context: RunContext, max_results: int = 10) -> str:
-    """
-    Get upcoming events from the user's primary Google Calendar.
-    
-    Args:
-        max_results: Maximum number of events to fetch.
-    """
-    try:
-        creds = _get_google_credentials()
-        service = build('calendar', 'v3', credentials=creds)
-
-        # Call the Calendar API
-        now = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
-        events_result = service.events().list(
-            calendarId='primary', timeMin=now,
-            maxResults=max_results, singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-        
-        events = events_result.get('items', [])
-
-        if not events:
-            return 'No upcoming events found.'
-            
-        result = ["Upcoming events:"]
-        for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            summary = event.get('summary', 'No Title')
-            result.append(f"- {start}: {summary}")
-            
-        return "\n".join(result)
-        
-    except Exception as e:
-        logger.error(f"Google Calendar error: {e}")
-        return f"Failed to fetch calendar events: {str(e)}"
-
-
-@function_tool()
-async def google_calendar_add_event(context: RunContext, summary: str, start_time_iso: str, end_time_iso: str) -> str:
-    """
-    Add a new event to the user's primary Google Calendar.
-    
-    Args:
-        summary: Title of the event.
-        start_time_iso: Start time in ISO format (e.g. 2026-10-25T10:00:00-07:00).
-        end_time_iso: End time in ISO format.
-    """
-    try:
-        creds = _get_google_credentials()
-        service = build('calendar', 'v3', credentials=creds)
-
-        event = {
-            'summary': summary,
-            'start': {
-                'dateTime': start_time_iso,
-                'timeZone': 'UTC',  # Assuming UTC if offset not provided, API handles offsets
-            },
-            'end': {
-                'dateTime': end_time_iso,
-                'timeZone': 'UTC',
-            },
-        }
-
-        event_result = service.events().insert(calendarId='primary', body=event).execute()
-        return f"Event created: {event_result.get('htmlLink')}"
-        
-    except Exception as e:
-        logger.error(f"Google Calendar error: {e}")
-        return f"Failed to create event: {str(e)}"
-
-
-# ==========================================
-# GOOGLE SHEETS TOOLS
-# ==========================================
-
-@function_tool()
-async def google_sheets_read(context: RunContext, spreadsheet_id: str, range_name: str) -> str:
-    """
-    Read data from a Google Sheet.
-    
-    Args:
-        spreadsheet_id: The ID of the spreadsheet (found in its URL).
-        range_name: The A1 notation of the range to read (e.g. 'Sheet1!A1:E').
-    """
-    try:
-        creds = _get_google_credentials()
-        service = build('sheets', 'v4', credentials=creds)
-
-        # Call the Sheets API
-        sheet = service.spreadsheets()
-        result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
-        values = result.get('values', [])
-
-        if not values:
-            return 'No data found in the specified range.'
-            
-        formatted_rows = []
-        for row in values:
-            formatted_rows.append(" | ".join([str(cell) for cell in row]))
-            
-        return "Sheet Data:\n" + "\n".join(formatted_rows)
-        
-    except Exception as e:
-        logger.error(f"Google Sheets error: {e}")
-        return f"Failed to read sheet: {str(e)}"
-
-
-@function_tool()
-async def google_sheets_append(context: RunContext, spreadsheet_id: str, range_name: str, values_csv: str) -> str:
-    """
-    Append rows of data to a Google Sheet.
-    
-    Args:
-        spreadsheet_id: The ID of the spreadsheet.
-        range_name: The sheet name or range to append to.
-        values_csv: Multiline string of comma-separated values to append.
-    """
-    try:
-        creds = _get_google_credentials()
-        service = build('sheets', 'v4', credentials=creds)
-
-        # Parse CSV string into 2D list
-        values = []
-        for row in values_csv.strip().split('\n'):
-            values.append([val.strip() for val in row.split(',')])
-
-        body = {
-            'values': values
-        }
-        
-        result = service.spreadsheets().values().append(
-            spreadsheetId=spreadsheet_id, 
-            range=range_name,
-            valueInputOption='USER_ENTERED', 
-            body=body
-        ).execute()
-        
-        updated_rows = result.get('updates', {}).get('updatedRows', 0)
-        return f"Successfully appended {updated_rows} rows to the sheet."
-        
-    except Exception as e:
-        logger.error(f"Google Sheets error: {e}")
-        return f"Failed to append to sheet: {str(e)}"
-
-
-# Export tools
-GOOGLE_TOOLS = [
-    google_calendar_get_events,
-    google_calendar_add_event,
-    google_sheets_read,
-    google_sheets_append
-]
+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
+Mm9IERM1TGi+E5QUwPPV6R1XZYc=
+-----END CASPER ENCRYPTED FILE-----

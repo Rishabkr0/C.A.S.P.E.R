@@ -1,496 +1,314 @@
-"""
-MS Office Automation Tools for Casper
-Uses win32com to natively control Word, Excel, and PowerPoint on Windows.
-"""
+-----BEGIN CASPER ENCRYPTED FILE-----
+Version: 1.0
+Algorithm: AES-256-GCM
+Notice: This file is encrypted. Run 'python casper_crypt.py unlock' with your key to decrypt.
 
-import os
-import asyncio
-import logging
-from typing import Optional
-from livekit.agents import function_tool, RunContext
-
-logger = logging.getLogger("office-tools")
-
-# Attempt to import win32com
-try:
-    import win32com.client
-    WIN32_AVAILABLE = True
-except ImportError:
-    WIN32_AVAILABLE = False
-    logger.warning("win32com.client not available. Please pip install pywin32")
-
-# Default save directory
-DEFAULT_SAVE_DIR = os.path.expanduser(r"~\Documents\Cipher\Casper_Docs")
-os.makedirs(DEFAULT_SAVE_DIR, exist_ok=True)
-
-
-def _init_com():
-    """Initializes COM for the current thread."""
-    try:
-        import pythoncom
-        pythoncom.CoInitialize()
-    except Exception:
-        pass
-
-
-def _uninit_com():
-    """Uninitializes COM for the current thread."""
-    try:
-        import pythoncom
-        pythoncom.CoUninitialize()
-    except Exception:
-        pass
-
-
-def _get_app(app_name: str, visible: bool = False):
-    """Helper to dispatch and get the COM app."""
-    if not WIN32_AVAILABLE:
-        raise RuntimeError("win32com.client is not installed on this system.")
-    _init_com()
-    app = win32com.client.Dispatch(app_name)
-    app.Visible = visible
-    return app
-
-
-# ==========================================
-# GENERAL OFFICE TOOLS
-# ==========================================
-
-@function_tool()
-async def office_close_app(context: RunContext, app_name: str) -> str:
-    """
-    Close an Office application by name.
-    
-    Args:
-        app_name: "Word", "Excel", or "PowerPoint"
-    """
-    if not WIN32_AVAILABLE:
-        return "win32com not available."
-    
-    name_map = {
-        "word": "Word.Application",
-        "excel": "Excel.Application",
-        "powerpoint": "PowerPoint.Application"
-    }
-    
-    app_id = name_map.get(app_name.lower())
-    if not app_id:
-        return f"Unsupported app: {app_name}. Use Word, Excel, or PowerPoint."
-        
-    try:
-        # Get existing instance if running
-        app = win32com.client.GetActiveObject(app_id)
-        app.Quit()
-        return f"Successfully closed {app_name}."
-    except Exception as e:
-        return f"Failed to close {app_name}. It might not be running. Error: {str(e)}"
-
-
-# ==========================================
-# MICROSOFT WORD TOOLS
-# ==========================================
-
-@function_tool()
-async def word_create_document(context: RunContext, text: str) -> str:
-    """
-    Open MS Word, create a new document, and type the provided text.
-    
-    Args:
-        text: The text to insert into the document.
-    """
-    try:
-        word = _get_app("Word.Application", visible=False)
-        doc = word.Documents.Add()
-        # Insert text at the end of the document
-        selection = word.Selection
-        selection.TypeText(text)
-        
-        # Reveal when done
-        word.Visible = True
-        return "Successfully created Word document and inserted text."
-    except Exception as e:
-        logger.error(f"Word automation failed: {e}")
-        return f"Failed to create Word document: {str(e)}"
-
-
-def _sync_word_read_active_document() -> str:
-    """Synchronous read for MS Word document using COM with UIA fallback."""
-    if not WIN32_AVAILABLE:
-        return "win32com is not available on this system."
-    _init_com()
-    
-    # 1. Primary: Try Word COM via GetActiveObject
-    try:
-        word = win32com.client.GetActiveObject("Word.Application")
-        if word and word.Documents.Count > 0:
-            doc = word.ActiveDocument
-            content = doc.Content.Text
-            if content and content.strip():
-                return f"MS Word Document Content ({doc.Name}):\n{content.strip()}"
-            return f"MS Word Document ({doc.Name}) is currently open but empty."
-        elif word and word.Documents.Count == 0:
-            return "MS Word is open, but no document is currently open in it."
-    except Exception as e:
-        logger.warning(f"COM GetActiveObject for Word returned: {e}. Trying UIA fallback...")
-
-    # 2. Fallback: Try reading via UI Automation
-    try:
-        from pywinauto import Desktop
-        desktop = Desktop(backend="uia")
-        for w in desktop.windows():
-            try:
-                title = w.window_text().strip()
-                if "word" in title.lower():
-                    for c in w.descendants():
-                        if c.element_info.control_type == "Document":
-                            try:
-                                txt = c.iface_text.DocumentRange.GetText(-1)
-                                if txt and txt.strip():
-                                    return f"MS Word Document Content ({title}):\n{txt.strip()}"
-                            except Exception:
-                                pass
-                            try:
-                                val = c.iface_value.CurrentValue
-                                if val and val.strip():
-                                    return f"MS Word Document Content ({title}):\n{val.strip()}"
-                            except Exception:
-                                pass
-            except Exception:
-                continue
-    except Exception as uia_err:
-        logger.warning(f"UIA fallback for Word failed: {uia_err}")
-    finally:
-        _uninit_com()
-
-    return "No active MS Word document could be read. Please ensure Microsoft Word is open with a document loaded."
-
-
-@function_tool()
-async def word_read_active_document(context: RunContext) -> str:
-    """
-    Read all the text from the currently active Microsoft Word document.
-    ALWAYS use this tool whenever the user asks to read, check, summarize, or see what is written in Word.
-    """
-    return await asyncio.to_thread(_sync_word_read_active_document)
-
-
-def _sync_notepad_read_active_window() -> str:
-    """Synchronous read for active Notepad window using UIA."""
-    try:
-        from pywinauto import Desktop
-        desktop = Desktop(backend="uia")
-        notepad_win = None
-
-        # Search for any open Notepad window
-        for w in desktop.windows():
-            try:
-                title = w.window_text().strip()
-                if "notepad" in title.lower():
-                    notepad_win = w
-                    break
-            except Exception:
-                continue
-
-        if not notepad_win:
-            return "No open Notepad window was found on your desktop."
-
-        win_title = notepad_win.window_text().strip()
-        content = ""
-
-        # Search for Document (Windows 11) or Edit (Windows 10) control
-        for control in notepad_win.descendants():
-            try:
-                c_type = control.element_info.control_type
-                if c_type in ["Document", "Edit"]:
-                    # Try Value pattern (fastest on Windows 11 Document and Windows 10 Edit)
-                    try:
-                        val = control.iface_value.CurrentValue
-                        if val and val.strip():
-                            content = val
-                            break
-                    except Exception:
-                        pass
-
-                    # Try Text pattern
-                    try:
-                        txt = control.iface_text.DocumentRange.GetText(-1)
-                        if txt and txt.strip():
-                            content = txt
-                            break
-                    except Exception:
-                        pass
-
-                    # Try window_text
-                    try:
-                        txt = control.window_text()
-                        if txt and txt.strip():
-                            content = txt
-                            break
-                    except Exception:
-                        pass
-            except Exception:
-                continue
-
-        if not content or not content.strip():
-            return f"Notepad is open ('{win_title}'), but it appears to be empty."
-
-        return f"Notepad Content ('{win_title}'):\n{content.strip()}"
-    except Exception as e:
-        logger.error(f"Error reading Notepad window: {e}")
-        return f"Failed to read Notepad: {str(e)}"
-
-
-@function_tool()
-async def notepad_read_active_window(context: RunContext) -> str:
-    """
-    Read all the text from the currently open or active Notepad window.
-    ALWAYS use this tool whenever the user asks to read, check, summarize, or see what is written in Notepad.
-    """
-    return await asyncio.to_thread(_sync_notepad_read_active_window)
-
-
-def _sync_notepad_write_active_window(new_content: str, append: bool = False) -> str:
-    """Updates the open Notepad window's text directly via UIA and syncs to disk if saved."""
-    try:
-        from pywinauto import Desktop
-        desktop = Desktop(backend="uia")
-        notepad_win = None
-        for w in desktop.windows():
-            try:
-                title = w.window_text().strip()
-                if "notepad" in title.lower():
-                    notepad_win = w
-                    break
-            except Exception:
-                continue
-
-        if not notepad_win:
-            return "No open Notepad window was found on your desktop to edit."
-
-        win_title = notepad_win.window_text().strip()
-        updated = False
-
-        for control in notepad_win.descendants():
-            try:
-                c_type = control.element_info.control_type
-                if c_type in ["Document", "Edit"]:
-                    final_text = new_content
-                    if append:
-                        current_val = ""
-                        try:
-                            current_val = control.iface_value.CurrentValue or ""
-                        except Exception:
-                            pass
-                        if not current_val:
-                            try:
-                                current_val = control.iface_text.DocumentRange.GetText(-1) or ""
-                            except Exception:
-                                pass
-                        final_text = (current_val.rstrip() + "\r\n\r\n" + new_content.strip()) if current_val.strip() else new_content.strip()
-
-                    # 1. Try SetValue pattern (Windows 11 Document & Windows 10 Edit)
-                    try:
-                        control.iface_value.SetValue(final_text)
-                        updated = True
-                        break
-                    except Exception:
-                        pass
-
-                    # 2. Try set_text (pywinauto Edit wrapper)
-                    try:
-                        control.set_text(final_text)
-                        updated = True
-                        break
-                    except Exception:
-                        pass
-            except Exception:
-                continue
-
-        if not updated:
-            return f"Found Notepad ('{win_title}'), but could not write to its text control."
-
-        # Also check if this Notepad window is associated with a file on Desktop
-        saved_msg = ""
-        try:
-            raw_name = win_title.split("- Notepad")[0].strip().lstrip("*").strip()
-            if raw_name and raw_name.lower() != "untitled":
-                desktop_file = os.path.join(os.path.expanduser("~"), "Desktop", raw_name)
-                if os.path.exists(desktop_file):
-                    with open(desktop_file, "w", encoding="utf-8") as f:
-                        f.write(final_text)
-                    saved_msg = f" (Also synced and saved directly to {desktop_file})"
-        except Exception:
-            pass
-
-        action = "Appended to" if append else "Updated"
-        return f"Successfully {action.lower()} Notepad ('{win_title}') live on screen.{saved_msg}"
-    except Exception as e:
-        logger.error(f"Error writing to Notepad: {e}")
-        return f"Failed to edit Notepad: {str(e)}"
-
-
-@function_tool()
-async def notepad_write_active_window(context: RunContext, new_content: str) -> str:
-    """
-    Directly updates or replaces the text inside the currently open Notepad window on screen.
-    ALWAYS use this tool whenever the user asks to edit, rewrite, update, or change the story/notes in Notepad.
-    
-    Args:
-        new_content: The complete updated text to place into Notepad.
-    """
-    return await asyncio.to_thread(_sync_notepad_write_active_window, new_content, False)
-
-
-@function_tool()
-async def notepad_append_active_window(context: RunContext, text_to_append: str) -> str:
-    """
-    Appends text to the end of the currently open Notepad window on screen.
-    Use this when the user asks to add something or append text to the current Notepad document.
-    
-    Args:
-        text_to_append: The new text to add to the bottom of the Notepad document.
-    """
-    return await asyncio.to_thread(_sync_notepad_write_active_window, text_to_append, True)
-
-
-@function_tool()
-async def word_save_document(context: RunContext, file_name: str) -> str:
-    """
-    Save the currently active MS Word document.
-    
-    Args:
-        file_name: The name of the file (e.g., 'report.docx'). It will be saved in Documents/Cipher/Casper_Docs.
-    """
-    try:
-        word = win32com.client.GetActiveObject("Word.Application")
-        if not word.Documents.Count:
-            return "No documents are currently open in Word."
-        
-        doc = word.ActiveDocument
-        if not file_name.endswith(".docx"):
-            file_name += ".docx"
-            
-        full_path = os.path.join(DEFAULT_SAVE_DIR, file_name)
-        # 16 is wdFormatDocumentDefault
-        doc.SaveAs2(full_path, 16)
-        return f"Document saved successfully at: {full_path}"
-    except Exception as e:
-        return f"Failed to save document: {str(e)}"
-
-
-# ==========================================
-# MICROSOFT EXCEL TOOLS
-# ==========================================
-
-@function_tool()
-async def excel_create_workbook(context: RunContext, data_csv: str) -> str:
-    """
-    Open MS Excel, create a new workbook, and populate it with comma-separated data.
-    
-    Args:
-        data_csv: Multiline string of comma-separated data to insert.
-    """
-    try:
-        excel = _get_app("Excel.Application", visible=False)
-        wb = excel.Workbooks.Add()
-        sheet = wb.ActiveSheet
-        
-        # Parse simple CSV and write to cells
-        rows = data_csv.strip().split('\n')
-        for r_idx, row in enumerate(rows):
-            cols = row.split(',')
-            for c_idx, val in enumerate(cols):
-                sheet.Cells(r_idx + 1, c_idx + 1).Value = val.strip()
-                
-        # Auto-fit columns
-        sheet.Columns.AutoFit()
-        
-        # Reveal when done
-        excel.Visible = True
-        return "Successfully created Excel workbook and inserted data."
-    except Exception as e:
-        logger.error(f"Excel automation failed: {e}")
-        return f"Failed to create Excel workbook: {str(e)}"
-
-
-@function_tool()
-async def excel_read_active_sheet(context: RunContext) -> str:
-    """
-    Read the used range of the currently active MS Excel worksheet.
-    """
-    try:
-        excel = win32com.client.GetActiveObject("Excel.Application")
-        if not excel.Workbooks.Count:
-            return "No workbooks are currently open in Excel."
-            
-        sheet = excel.ActiveSheet
-        used_range = sheet.UsedRange
-        
-        if not used_range:
-            return "Active sheet is empty."
-            
-        # used_range() returns a tuple of tuples representing rows and columns
-        data = used_range.Value
-        if not data:
-            return "Active sheet is empty."
-            
-        result = []
-        # Handle single cell vs multi-cell return values
-        if isinstance(data, tuple):
-            for row in data:
-                row_strs = [str(cell) if cell is not None else "" for cell in row]
-                result.append(" | ".join(row_strs))
-        else:
-            result.append(str(data))
-            
-        return "Excel Data:\n" + "\n".join(result)
-    except Exception as e:
-        return f"Failed to read Excel data. Is Excel open? Error: {str(e)}"
-
-
-# ==========================================
-# MICROSOFT POWERPOINT TOOLS
-# ==========================================
-
-@function_tool()
-async def ppt_create_presentation(context: RunContext, title: str, subtitle: str) -> str:
-    """
-    Open MS PowerPoint, create a new presentation, and add a title slide.
-    
-    Args:
-        title: Main title for the presentation.
-        subtitle: Subtitle for the presentation.
-    """
-    try:
-        ppt = _get_app("PowerPoint.Application", visible=False)
-        pres = ppt.Presentations.Add()
-        # 1 is ppLayoutTitle
-        slide = pres.Slides.Add(1, 1)
-        
-        slide.Shapes.Title.TextFrame.TextRange.Text = title
-        if slide.Shapes.Count >= 2:
-            slide.Shapes(2).TextFrame.TextRange.Text = subtitle
-            
-        # Reveal when done
-        ppt.Visible = True
-        return "Successfully created PowerPoint presentation."
-    except Exception as e:
-        logger.error(f"PowerPoint automation failed: {e}")
-        return f"Failed to create PowerPoint: {str(e)}"
-
-
-# Export all tools
-OFFICE_TOOLS = [
-    office_close_app,
-    word_create_document,
-    word_read_active_document,
-    word_save_document,
-    excel_create_workbook,
-    excel_read_active_sheet,
-    ppt_create_presentation,
-    notepad_read_active_window,
-    notepad_write_active_window,
-    notepad_append_active_window,
-]
-
-
+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
+aR35NcBNUL7v20uW32tBuktkYwJgxBxizHIZ
+-----END CASPER ENCRYPTED FILE-----
