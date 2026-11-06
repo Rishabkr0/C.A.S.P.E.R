@@ -49,3 +49,8 @@ worker_workspace
 casper.key
 *.key
 .casper_key.bak
+
+# Test artifacts & crash logs
+test_data_artifacts/
+crash.log
+company_employees_raw.csv
